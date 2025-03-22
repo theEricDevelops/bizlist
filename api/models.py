@@ -34,5 +34,11 @@ class BusinessContact(Base):
     business_id = Column(Integer, ForeignKey("businesses.id"), primary_key=True)
     contact_id = Column(Integer, ForeignKey("contacts.id"), primary_key=True)
 
+class Source(Base):
+    __tablename__ = "sources"
+    id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    url = Column(String, unique=True, nullable=True)
+
 Base.metadata.create_all(engine) # Create tables if they don't exist
 

@@ -9,3 +9,4 @@ pytest
 pytest-cov  # For code coverage reporting (optional, but recommended)
 python-dotenv # For environment variables
 alembic
+openai
