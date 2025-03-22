@@ -4,19 +4,19 @@ This file outlines the tasks required to build the backend API for the BizList p
 
 ## I. API Infrastructure
 
-- [ ] **Framework Selection:**
-  - [ ] Choose an API framework (e.g., FastAPI (Python), Node.js with Express).  Consider factors like ease of use, performance, and community support.
-- [ ] **Project Setup:**
-  - [ ] Create project directory and initialize Git repository.
-  - [ ] Install necessary dependencies.
-- [ ] **API Endpoint Structure:**
-  - [ ] Design the basic structure of API endpoints (URLs, HTTP methods).
+- [X] **Framework Selection:**
+  - [X] Choose an API framework (e.g., FastAPI (Python), Node.js with Express).  Consider factors like ease of use, performance, and community support.
+- [X] **Project Setup:**
+  - [X] Create project directory and initialize Git repository.
+  - [X] Install necessary dependencies.
+- [X] **API Endpoint Structure:**
+  - [X] Design the basic structure of API endpoints (URLs, HTTP methods).
 - [ ] **Error Handling:**
   - [ ] Implement a robust error handling mechanism (HTTP status codes, custom error responses).
 - [ ] **Logging:**
   - [ ] Set up logging to track API requests, responses, and errors.
-- [ ] **Configuration:**
-  - [ ] Implement configuration management (environment variables, config files).  Consider using a library like `python-dotenv` (Python) or similar.
+- [X] **Configuration:**
+  - [X] Implement configuration management (environment variables, config files).  Consider using a library like `python-dotenv` (Python) or similar.
 - [ ] **Testing Framework:**
   - [ ] Set up a testing framework (e.g., pytest (Python), Jest (Node.js)).
 
