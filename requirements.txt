@@ -1,0 +1,10 @@
+# /requirements.txt
+
+fastapi
+uvicorn
+psycopg2-binary  # For PostgreSQL database connection
+beautifulsoup4
+requests  # For making HTTP requests to APIs (if needed)
+pytest
+pytest-cov  # For code coverage reporting (optional, but recommended)
+python-dotenv # For environment variables
