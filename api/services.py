@@ -1,60 +1,100 @@
 import os
+import re
 import requests
-from bs4 import BeautifulSoup
-from schemas import SourceData, SourceSchema
-from typing import List, Dict
+from schemas import SourceData, SourceSchema, BusinessSchema
+from models import Business, Source, BusinessSource
+
+from typing import List, Dict, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func
-from models import Business, Contact, BusinessContact
+from sqlalchemy import select
 from openai import OpenAI
 
-import re
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.common.exceptions import TimeoutException
+
+from bs4 import BeautifulSoup
+
 import logging
-import json
+import time
+import csv  # Added for CSV handling
+
+from urllib.parse import urlparse
 
 # Configure logging
-# Convert the log folder from a relative path to an absolute path. The user has specified a path
-# relative to the root of the project, so we need to convert it to an absolute path.
-log_folder = os.getenv("LOG_FOLDER", "/logs") # Default to /logs if LOG_FOLDER is not set
+log_folder = os.getenv("LOG_FOLDER", "/logs")
 log_folder = os.path.abspath(log_folder)
 log_file = os.path.join(log_folder, os.getenv("LOG_FILE", "bizlist.log"))
 log_format = os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 os.makedirs(log_folder, exist_ok=True)
-log_level = os.getenv("LOG_LEVEL", "INFO")
 
-logging.basicConfig(
-    filename=log_file,
-    level=log_level,
-    format=log_format
-)
+log_level_str = os.getenv("LOG_LEVEL", "DEBUG")
+log_level = getattr(logging, log_level_str.upper(), logging.DEBUG)
 
 logger = logging.getLogger(__name__)
+logger.setLevel(log_level)
+lh = logging.FileHandler(log_file, mode="w")
+lh.setFormatter(logging.Formatter(log_format))
+logger.addHandler(lh)
+
+html_output_file = os.path.join(log_folder, "html_output.log")
+html_lh = logging.FileHandler(html_output_file, mode="w")
+html_lh.setFormatter(logging.Formatter(log_format))
+html_logger = logging.getLogger("html")
+html_logger.setLevel(log_level)
+html_logger.addHandler(html_lh)
+
+def setup_driver() -> webdriver.Chrome:
+    options = webdriver.ChromeOptions()
+    #options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.binary_location = r"C:\Users\eric\dev\bizlist\webdriver\chrome-win64\chrome.exe"
+    chromedriver_path = r"C:\Users\eric\dev\bizlist\webdriver\chromedriver-win64\chromedriver.exe"
+    service = ChromeService(executable_path=chromedriver_path)
+    driver = webdriver.Chrome(service=service, options=options)
+    return driver
+
+def load_zip_code_data():
+    """Loads zip code data from CSV into a dictionary mapping zip codes to (latitude, longitude)."""
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    csv_path = os.path.join(project_dir, "data", "USZipsWithLatLon_20231227.csv")
+    
+    try:
+        with open(csv_path, 'r') as f:
+            reader = csv.DictReader(f)
+            zip_data = {}
+            for row in reader:
+                zip_code = row['postal code']
+                lat = float(row['latitude'])
+                lon = float(row['longitude'])
+                zip_data[zip_code] = (lat, lon)
+            return zip_data
+    except FileNotFoundError:
+        logger.error(f"CSV file not found: {csv_path}")
+        return {}
+    except KeyError as e:
+        logger.error(f"Missing column in CSV: {e}")
+        return {}
+    except ValueError as e:
+        logger.error(f"Error parsing CSV: {e}")
+        return {}
 
 def get_html_from_url(url: str) -> str:
-    """
-    Retrieves HTML content from a URL.
-
-    Args:
-        url (str): URL to retrieve HTML content from.
-
-    Returns:
-        str: HTML content.
-    """
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
     }
     try:
         logger.info(f"Retrieving HTML from URL: {url}")
         response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-
+        response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser")
         body_content = str(soup.body)
-
         logger.debug(f"Response status code: {response.status_code}")
-        logger.debug(f"Response content: {response.content}")
+        html_logger.debug(f"Response content: {response.content}")
         logger.debug(f"Response headers: {response.headers}")
-                
         return body_content
     except requests.RequestException as e:
         logger.error(f"Error retrieving HTML from URL: {url}")
@@ -64,58 +104,159 @@ def get_html_from_url(url: str) -> str:
         logger.exception(f"An unexpected error occurred while retrieving HTML from URL: {url}")
         return None
 
-def send_html_to_llm_for_extraction(html: str, expected: List[str]) -> Dict:
-    """
-    Sends HTML to AI and returns extracted elements.
+def formatPhone(number: str) -> str:
+    number = number.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".", "").replace("+", "")
+    number = number.split("tel:")[-1] if number.startswith("tel:") else number
+    if len(number) == 10:
+        logger.debug(f"Returning phone number: {number}")
+        return number
+    elif len(number) == 11 and number[0] == "1":
+        logger.debug(f"Formatting phone number: {number}")
+        return number[1:]
+    else:
+        logger.warning(f"Invalid phone number: {number}")
+        return None
 
-    Args:
-        html (str): HTML content to send to AI for extraction.
-        expected (List[str]): Expected elements to extract from the HTML.
+def formatZipCode(zip_code: str) -> str:
+    zip_code = zip_code.replace("-", "").replace(" ", "")
+    if (len(zip_code) == 5 or len(zip_code) == 9) and zip_code.isdigit():
+        logger.debug(f"Returning ZIP code: {zip_code}")
+        return zip_code
+    else:
+        logger.warning(f"Invalid ZIP code: {zip_code}")
+        return None
 
-    Returns:
-        dict: Extracted elements.
-    """
+def formatWebsite(website: str) -> str:
+    if not website:
+        logger.debug(f"No website found")
+        return None
+    website = website.strip()
+    url_pattern = r"^(?:http(s)?:\/\/)?[\w.-]+(?:\.[\w\.-]+)+[\w\-\._~:/?#[\]@!\$&'\(\)\*\+,;=.]+$"
+    match = re.match(url_pattern, website, re.IGNORECASE)
+    if match:
+        if not website.startswith("http"):
+            website = f"https://{website}"
+        logger.debug(f"Returning website: {website}")
+        return website
+    elif match is None:
+        logger.debug(f"No website found")
+        return None
+    else:
+        logger.warning(f"Invalid website: {website}")
+        return None
 
+def formatEmail(email: str) -> str:
+    if not email:
+        logger.debug(f"No email found")
+        return None
+    email = email.strip()
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+    match = re.match(email_pattern, email)
+    if match:
+        logger.debug(f"Returning email: {email}")
+        return email
+    else:
+        logger.warning(f"Invalid email: {email}")
+        return None
+
+def get_address_parts(address_str: str) -> Tuple[str, str, str, str, str]:
+    logger.debug(f"Parsing address: {address_str}")
+    address_str = re.sub(r'\s+', ' ', address_str.strip())
+    address_str = re.sub(r',+', ',', address_str)
+    country_pattern = r'(,\s*)?(US|USA|United States|U\.S\.|U\.S\.A\.)$'
+    country_match = re.search(country_pattern, address_str, re.IGNORECASE)
+    if country_match:
+        address_str = address_str[:country_match.start()].strip(', ')
+    zip_pattern = r'(\d{5}(?:-\d{0,4})?|\d{4}|\d{6})$'
+    zip_match = re.search(zip_pattern, address_str)
+    if zip_match:
+        zip_code = zip_match.group(0)
+        address_no_zip = address_str[:zip_match.start()].strip(', ')
+    else:
+        zip_code = ''
+        address_no_zip = address_str.strip(', ')
+    if not address_no_zip:
+        return (address_no_zip, '', '', '', zip_code)
+    state_pattern = r'(?:,?\s*)([A-Z]{2}|New York|General Delivery)$'
+    state_match = re.search(state_pattern, address_no_zip)
+    if state_match:
+        state = state_match.group(1)
+        address_no_state = address_no_zip[:state_match.start()].strip(', ')
+    else:
+        state = ''
+        address_no_state = address_no_zip.strip(', ')
+    if not address_no_state:
+        return (address_no_state, '', '', state, zip_code)
+    parts = [p.strip() for p in address_no_state.split(',')]
+    if len(parts) >= 2:
+        city = parts[-1]
+        address_parts = ' '.join(parts[:-1])
+    else:
+        words = address_no_state.split()
+        if len(words) > 1:
+            city = words[-1]
+            address_parts = ' '.join(words[:-1])
+        else:
+            city = ''
+            address_parts = address_no_state
+    address1 = address_parts
+    address2 = ''
+    secondary_units = r'(Apt|Suite|Ste|Unit|Dept|#|No|Number|Floor|Flr)\s*[A-Za-z0-9-]+'
+    secondary_match = re.search(secondary_units, address1, re.IGNORECASE)
+    if secondary_match:
+        address2 = address1[secondary_match.start():].strip()
+        address1 = address1[:secondary_match.start()].strip()
+    else:
+        building_pattern = r'(Building|Bldg|Park|Pk|Office)\s+[A-Za-z0-9\s]+'
+        if re.search(r'^\d+\s+[A-Za-z]+|^(RR|HC|PO|P\.O\.)', address1, re.IGNORECASE):
+            building_match = re.search(building_pattern, address1, re.IGNORECASE)
+            if building_match:
+                address2 = address1[building_match.start():].strip()
+                address1 = address1[:building_match.start()].strip()
+    if state == "General Delivery":
+        city = "General Delivery"
+        state = ''
+        address1 = address1 if address1 else "General Delivery"
+        address2 = ''
+    logger.debug(f"Extracted address parts: {address1}, {address2}, {city}, {state}, {zip_code}")
+    return (address1, address2, city, state, zip_code)
+
+def send_company_to_llm_for_contact_info(html: str, expected: List[str]) -> Dict:
     system_message = """
-        You are a web scraping expert.  Analyze the following HTML from a search results page.
+        You are a web scraping expert. You will recieve a JSON with any combination of the following:
 
-        For each result, extract:
+        - company_name: string
+        - phone: string
+        - email: string
+        - address: string
+        - website: string
+        - industry: string
 
-        * Company Name
-        * Phone Number
-        * URL of the details page for the company
+        Your task is to search the web to complete the remaining fields and to attempt to find the owner's information. 
 
-        Return the data as a JSON array of objects, where each object has the keys "company", "phone", and "details_url".  If a field is missing, use "null".
-        Example:
+        Your output should be structured as follows:
+
         {
-            "companies": [ 
-                {
-                    "company": "AI Roofing",
-                    "phone": "1234567890",
-                    "details_url": "https://www.airoofing.com"
-                },
-                {
-                    "company": "AI Roofing 2",
-                    "phone": "1234567890",
-                    "details_url": "https://www.airoofing2.com"
-                }
-            ]
+            "company_name": "AI Roofing",
+            "company_phone": "1234567890",
+            "company_email": "sales@airoofing.com",
+            "company_address": "123 Main St, Springfield, IL 62701",
+            "company_website": "https://www.airoofing.com",
+            "company_industry": "Roofing",
+            "owner_name": "Joe Smith",
+            "owner_phone": "1234567890",
+            "owner_email": "joe@airoofing.com",
+            "owner_address": "123 Main St, Springfield, IL 62701",
+            "owner_linkedin": "https://www.linkedin.com/in/joesmith"
         }
     """
-
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
         raise ValueError("XAI_API_KEY environment variable not set.")
         return None
-    
-    client = OpenAI(
-        api_key=api_key,
-        base_url="https://api.x.ai/v1",
-    )
-
-    logger.info("Sending HTML to AI for extraction")
-    logger.debug(f"HTML: {html}")
-    logger.debug(f"Expected elements: {expected}")
+    client = OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
+    logger.info("Sending info to LLM for contact info...")
+    logger.debug(f"Sent: {html}")
     completion = client.chat.completions.create(
         model="grok-2-latest",
         messages=[
@@ -123,151 +264,360 @@ def send_html_to_llm_for_extraction(html: str, expected: List[str]) -> Dict:
             {"role": "user", "content": html},
         ],
     )
-
     logger.debug(f"AI response: {completion}")
-
     print(completion.choices[0].message.content)
-    # Mock AI response
     return {
         "companies": [ 
-            {
-                "company": "AI Roofing",
-                "phone": "1234567890",
-                "details_url": "https://www.airoofing.com"
-            },
-            {
-                "company": "AI Roofing 2",
-                "phone": "1234567890",
-                "details_url": "https://www.airoofing2.com"
-            }
+            {"company": "AI Roofing", "phone": "1234567890", "details_url": "https://www.airoofing.com"},
+            {"company": "AI Roofing 2", "phone": "1234567890", "details_url": "https://www.airoofing2.com"}
         ]
     }
 
-def insert_data(db: Session, source_data: List[SourceData]):
-    """Inserts business and contact data into the database, handling missing fields."""
-    for item in source_data:
-        source_id = item.source_id
-        data = item.data
-
-        # Find or create business
-        business_name = data.get("company")
-        business = db.execute(select(Business).where(Business.name == business_name)).scalar()
-        if not business:
-            business = Business(name=business_name)
-            db.add(business)
-            db.flush()
-
-        # Find or create contact
-        contact_name = data.get("name")
-        contact = db.execute(select(Contact).where(func.lower(Contact.first_name) == func.lower(contact_name))).scalar() #Case-insensitive search
-        if not contact:
-            contact = Contact(first_name=data.get("name", ""), last_name="", email=data.get("email"), phone=data.get("phone"), title="")
-            db.add(contact)
-            db.flush()
-
-        # Add business-contact association (if business exists)
-        if business:
-            business_contact = db.execute(select(BusinessContact).where(BusinessContact.business_id == business.id, BusinessContact.contact_id == contact.id)).scalar()
-            if not business_contact:
-                business_contact = BusinessContact(business_id=business.id, contact_id=contact.id)
-                db.add(business_contact)
-
+def update_business(db: Session, business: Business, data: BusinessSchema) -> Business:
+    business.name = data.name
+    business.industry = data.industry
+    business.email = data.email
+    business.phone = data.phone
+    business.address = data.address
+    business.address2 = data.address2
+    business.city = data.city
+    business.state = data.state
+    business.zip = data.zip
+    business.website = data.website
+    business.notes = data.notes
+    for source_id in data.sources:
+        if source_id not in [bs.source_id for bs in business.sources]:
+            business.sources.append(source_id)
     db.commit()
-    print("Data inserted successfully!")
+    db.refresh(business)
+    logger.info(f"Updated business: {business.name} (ID: {business.id})")
+    return business
 
-def scrape_gaf(location: dict, radius: int = 25, page_num: int = 1) -> List[Dict]:
-    """
-    Scrapes contractor data from GAF's website.
-    
-    Args:
-        location (dict): Location data containing "state" and "city" or a ZIP code.
-        radius (int): Search radius in miles.
-        page_num (int): Page number to scrape.
+def insert_company_data(db: Session, company: SourceData):
+    source = db.execute(select(Source).where(Source.id == company.source_id)).scalar_one_or_none()
+    data = company.data
+    name = str(data.get("name")).capitalize()
+    industry = str(data.get("industry")).capitalize() or ""
+    email = formatEmail(data.get("email")) or ""
+    phone_number = formatPhone(data.get("phone")) or ""
+    address, address2, city, state, zip = get_address_parts(data.get("address"))
+    zip = formatZipCode(zip) or ""
+    website = formatWebsite(data.get("website")) or ""
+    business = Business(
+        name=name, industry=industry, email=email, phone=phone_number,
+        address=address, address2=address2, city=city, state=state, zip=zip,
+        website=website, notes=str(data)
+    )
+    existing_business = db.query(Business).filter(Business.name == name).first()
+    if existing_business:
+        logger.info(f"Found existing business: {name} (ID: {existing_business.id})")
+        updated_business = update_business(db, existing_business, business)
+        db.refresh(updated_business)
+        existing_business_source = db.query(BusinessSource).filter(
+            BusinessSource.business_id == existing_business.id,
+            BusinessSource.source_id == company.source_id
+        ).first()
+        if not existing_business_source and source:
+            business_source = BusinessSource(business_id=existing_business.id, source_id=source.id)
+            db.add(business_source)
+        db.commit()
+        return {"existing": True, "business": updated_business}
+    else:
+        logger.debug(f"Adding new business: {business}")    
+        db.add(business)
+        db.flush()
+        if source:
+            business_source = BusinessSource(business_id=business.id, source_id=source.id)
+            db.add(business_source)
+        db.commit()
+        return {"existing": False, "business": business}
 
-    Returns:
-        List[Dict]: List of contractor data.
-    """
-
+def build_base_url(location: dict, radius: int) -> str:
+    logger.info(f"Building base URL for GAF with location: {location} and radius: {radius}")
     if "state" in location and "city" in location:
         url = f"https://www.gaf.com/en-us/roofing-contractors/residential/usa/{location['state']}/{location['city']}?distance={radius}"
     elif "zipCode" in location:
-        url=f"https://www.gaf.com/en-us/roofing-contractors/residential?postalCode={location['zipCode']}&distance={radius}&countryCode=us"
-    elif ("state" in location and not "city" in location) or ("city" in location and not "state" in location):
+        url = f"https://www.gaf.com/en-us/roofing-contractors/residential?postalCode={location['zipCode']}&distance={radius}&countryCode=us"
+    elif ("state" in location and "city" not in location) or ("city" in location and "state" not in location):
         raise ValueError("Both 'state' and 'city' are required if one is provided.")
     elif ("state" in location or "city" in location) and "zip" in location:
         raise ValueError("You need to provide either 'state' and 'city' or 'zip', not both.")
     else:
         raise ValueError("You need to provide either 'state' and 'city' or 'zip'.")
-    
+    logger.debug(f"Built URL: {url}")
+    return url
+
+def get_top_level_url(url: str) -> str:
+    logger.info(f"Extracting top-level URL from: {url}")
+    try:
+        parsed_url = urlparse(url)
+        top_level_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
+        logger.debug(f"Extracted top-level URL: {top_level_url}")
+        return top_level_url
+    except Exception as e:
+        logger.error(f"Error extracting top-level URL: {e}")
+        return None
+
+def add_or_find_source(db: Session, source: SourceSchema) -> int:
+    source_name = source.name
+    source_url = source.url
+    existing_source = db.query(Source).filter(Source.name == source_name).first()
+    if not existing_source:
+        new_source = Source(name=source_name, url=source_url)
+        db.add(new_source)
+        db.commit()
+        db.refresh(new_source)
+        logger.info(f"Added new source: {new_source.name} (ID: {new_source.id})")
+        return new_source.id
+    else:
+        logger.info(f"Found existing source: {existing_source.name} (ID: {existing_source.id})")
+        return existing_source.id
+
+def get_total_results(driver: webdriver.Chrome, url: str) -> int:
+    try:
+        logger.info(f"Getting total results from URL: {url}")
+        driver.get(url)
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                WebDriverWait(driver, 20, poll_frequency=1).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "contractor-listing__wrapper"))
+                )
+                break
+            except TimeoutException as e:
+                if attempt == max_attempts:
+                    logger.error(f"Timeout waiting for elements after {max_attempts} attempts.")
+                    driver.quit()
+                    return 0
+                else:
+                    logger.warning(f"Timeout waiting for elements (attempt {attempt}/{max_attempts}). Retrying...")
+                    time.sleep(5)
+                    driver.refresh()
+        html = driver.page_source
+        soup = BeautifulSoup(html, "html.parser")
+        body_content = soup.body
+        html_logger.debug(f"Response body: {body_content}")
+        query_summary = body_content.find("div", class_="query-summary")
+        if query_summary:
+            total_results_str = query_summary.text.strip().split("of ")[1].split(" ")[0]
+            try:
+                total_results = int(total_results_str)
+                logger.info(f"Total results: {total_results}")
+                return total_results
+            except (ValueError, IndexError):
+                logger.warning("Could not extract total results.")
+                return 0
+        elif body_content.find("div", class_="error-message"):
+            logger.warning("No results found.")
+            return 0
+        else:
+            logger.warning("Could not find query summary.")
+            return 0
+    except requests.RequestException as e:
+        logger.error(f"Error getting total results: {e}")
+        if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 403:
+            logger.error("GAF is blocking our requests. Please try again later.")
+        return 0
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while getting total results: {e}")
+        return 0
+
+def scrape_gaf(driver: webdriver.Chrome, url: str, page_num: int = 1) -> List[Dict]:
     if page_num > 1:
         url += f"#firstResult={10 * (page_num - 1)}"
-
     try:
         logger.info(f"Scraping GAF with URL: {url}")
-
-        response = requests.get(url)
-        response.raise_for_status()  # Raise HTTPError for bad responses (4xx or 5xx)
-        soup = BeautifulSoup(response.content, "html.parser")
-
-        contractor_elements = soup.find_all("article", class_="certification-card")
-
+        driver.get(url)
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                WebDriverWait(driver, 20, poll_frequency=1).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "certification-card"))
+                )
+                break
+            except TimeoutException as e:
+                if attempt == max_attempts:
+                    logger.error(f"Timeout waiting for elements after {max_attempts} attempts.")
+                    driver.quit()
+                    return []
+                else:
+                    logger.warning(f"Timeout waiting for elements (attempt {attempt}/{max_attempts}). Retrying...")
+                    time.sleep(5)
+                    driver.refresh()
+        html = driver.page_source
+        soup = BeautifulSoup(html, "html.parser")
+        body_content = soup.body
+        html_logger.debug(f"Response body: {body_content}")
+        query_summary = body_content.find("div", class_="query-summary")
+        if query_summary:
+            total_results_str = query_summary.text.strip().split("of ")[1].split(" ")[0]
+            try:
+                total_results = int(total_results_str)
+                logger.info(f"Total results: {total_results}")
+            except (ValueError, IndexError):
+                logger.warning("Could not extract total results.")
+                total_results = 0
+        else:
+            logger.warning("Could not find query summary.")
+            total_results = 0
+        contractor_elements = body_content.find_all("article", class_="certification-card")
+        logger.debug(f"Found {len(contractor_elements)} contractor elements.")
         contacts = []
         for element in contractor_elements:
             name_element = element.find("h2", class_="certification-card__heading")
-            if name_element:
-                name = name_element.text.strip()
-            else:
-                name = None
-
-            details_url_element = element.find("h2", class_="certification-card__heading").find("a").get("href")
-            if details_url_element:
-                details_url = details_url_element.
-            else:
-                details_url = None
-
-            phone_element = element.find("a", class_="contractor-phone")
-            if phone_element:
-                phone = phone_element.text.strip()
-            else:
-                phone = None
-
-            address_element = element.find("p", class_="contractor-address")
-            if address_element:
-                address = address_element.text.strip()
-            else:
-                address = None
-
-            website_element = element.find("a", class_="contractor-website")
-            if website_element:
-                website = website_element.get("href").strip()
-            else:
-                website = None
-
+            name = name_element.text.strip() if name_element else None
+            details_url = element.find("h2", class_="certification-card__heading").find("a").get("href") if name_element else None
+            phone_element = element.find("a", class_="certification-card__phone")
+            phone = phone_element.get("href") if phone_element else None
             contacts.append({
+                "type": "business",
+                "industry": "roofing",
                 "name": name,
                 "phone": phone,
-                "address": address,
-                "website": website
+                "details_url": details_url
             })
-
+        logger.info(f"Page {page_num} scraped. Extracted {len(contacts)} contacts.")
+        logger.debug(f"Extracted contacts: {contacts}")
         return contacts
+    except requests.RequestException as e:
+        logger.error(f"Error scraping GAF: {e}")
+        if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 403:
+            logger.error("GAF is blocking our requests. Please try again later.")
+        return []
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while scraping GAF: {e}")
+        return []
 
-def extract_gaf_data(postal_code: str, radius: int = 25, max_pages: int = 10) -> List[SourceData]:
-    """Extracts data from GAF, handling pagination."""
+def scrape_gaf_details(driver: webdriver.Chrome, url: str) -> Dict:
+    logger.info(f"Scraping GAF details from URL: {url}")
+    try:
+        driver.get(url)
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                WebDriverWait(driver, 20, poll_frequency=1).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "image-masthead-carousel__info-wrapper"))
+                )
+                break
+            except TimeoutException as e:
+                if attempt == max_attempts:
+                    logger.error(f"Timeout waiting for elements after {max_attempts} attempts.")
+                    driver.quit()
+                    return {}
+                else:
+                    logger.warning(f"Timeout waiting for elements (attempt {attempt}/{max_attempts}). Retrying...")
+                    time.sleep(5)
+                    driver.refresh()
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+        body_content = soup.body
+        logger.info(f"Got response from URL {url}")
+        html_logger.debug(f"Response body: {body_content}")
+        address_element = body_content.find("address", class_="image-masthead-carousel__address")
+        address = address_element.text.strip() if address_element else None
+        website_element = body_content.find("div", class_="image-masthead-carousel__links")
+        website = website_element.find("a").get("href") if website_element and not website_element.find("a").get("href").__contains__("tel:") else None
+        return {"address": address, "website": website}
+    except requests.RequestException as e:
+        logger.error(f"Error scraping GAF details: {e}")
+        if isinstance(e, requests.exceptions.HTTPError) and e.response.status_code == 403:
+            logger.error("GAF is blocking our requests. Please try again later.")
+        return {}
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while scraping GAF details: {e}")
+        return {}
+
+def extract_gaf_data(db: Session, location: dict, radius: int = 25, max_pages: int = -1) -> List[SourceData]:
+    """Extracts data from GAF, handling pagination and setting geolocation based on zip code."""
     all_contacts = []
-    page_num = 1
-    while True:
-        contacts = scrape_gaf(postal_code, radius, page_num)
-        if not contacts:
-            break #No more contacts found
-        all_contacts.extend(contacts)
-        page_num += 1
-        if page_num > max_pages:
-            break #Reached max pages
+    driver = setup_driver()
+    
+    # Load zip code data
+    zip_data = load_zip_code_data()
+    
+    # Set geolocation if zip code is provided
+    if "zipCode" in location:
+        zip_code = location["zipCode"]
+        if zip_code in zip_data:
+            lat, lon = zip_data[zip_code]
+            driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+                "latitude": lat,
+                "longitude": lon,
+                "accuracy": 100
+            })
+            logger.info(f"Set geolocation to lat: {lat}, lon: {lon} for zip code: {zip_code}")
+        else:
+            logger.warning(f"Zip code {zip_code} not found in zip data.")
+    else:
+        logger.info("No zip code provided, not setting geolocation.")
+    
+    base_url = build_base_url(location, radius)
 
-    # Assuming you have a source with id 3 for GAF
-    gaf_source_data = [SourceData(source_id=3, data=contact) for contact in all_contacts]
+    logger.debug(f"Driver: {driver}")
+    logger.debug(f"Base URL: {base_url}")
+    logger.debug(f"DB: {db}")
+
+    try:
+        page_num = 1
+        total_results = get_total_results(driver, base_url)
+
+        if total_results == 0:
+            logger.warning("No results found.")
+            return []
+        
+        if max_pages == -1:
+            max_pages = (total_results + 9) // 10
+
+        logger.info(f"Found {total_results} results. Scraping up to {max_pages} pages.")
+
+        while total_results > 0 and page_num <= max_pages:
+            url = f"{base_url}#firstResult={10 * (page_num - 1)}"
+            logger.debug(f"Scraping page {page_num} with URL: {url}")
+            contacts = scrape_gaf(driver, url)
+            if not contacts:
+                logger.warning(f"No contacts found on page {page_num}.")
+                break
+            all_contacts.extend(contacts)
+            page_num += 1
+
+        for contact in all_contacts:
+            logger.debug(f"Getting details for contact: {contact}")
+            details_url = contact.get("details_url")
+            if details_url:
+                details = scrape_gaf_details(driver, details_url)
+                logger.debug(f"Extracted details: {details}")
+                contact.update(details)
+        
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while extracting GAF data: {e}")
+    
+    if driver:
+        driver.quit()
+
+    source_url = get_top_level_url(base_url)
+    source = SourceSchema(name="GAF", url=source_url)
+    source_id = add_or_find_source(db, source)
+
+    gaf_source_data = [SourceData(source_id=source_id, data=contact) for contact in all_contacts]
+    logger.info(f"Extracted GAF data. Total contacts: {len(all_contacts)}")
+    logger.debug(f"Extracted GAF data: {gaf_source_data}")
     return gaf_source_data
 
+zip_codes = ['31084', '30527', '31546', '31539', '30452', '30823', '39862', '31810', '30178', '30724', '31409', '31548', '30426', '39854', '30516', '31719', '31636', '30108', '39832', '30537', '30075', '31833', '31087', '31798', '31327', '30809', '31562', '30559', '31303', '30257', '30401', '31704', '31626', '31631', '31999', '30427', '30175', '31747', '31099', '30025', '31550', '31040', '30290', '30668', '39834', '30728', '30622', '31033', '31516', '31009', '30241', '31030', '31642', '30039']
+tn_zip_codes = ['38359', '38069', '37308', '38544', '37877', '37733', '37066', '37659', '37043', '38126', '38080', '38488', '37680', '37851', '37380', '38251', '38575', '38067', '38572', '37753', '37765', '38365', '38041', '37882', '37028', '38577', '38257', '37405', '37305', '38006', '37179', '37078', '38358', '37026', '37934', '38486', '37333', '38483', '37352', '37846', '37187', '38363']
+
 if __name__ == "__main__":
-    send_html_to_llm_for_extraction(get_html_from_url('https://www.gaf.com/en-us/roofing-contractors/residential/usa/ga/canton?distance=25'), ["companies"])
+    count = {'new': 0, 'existing': 0}
+    from dependencies import get_db_conn
+    print("Running service directly...")
+    db = next(get_db_conn())
+    for zip_code in tn_zip_codes:
+        logger.info(f"Extracting data for ZIP code: {zip_code}")
+        businesses = extract_gaf_data(db, {"zipCode": zip_code}, 25)  # Updated to use loop variable
+        for business in businesses:
+            result = insert_company_data(db, business)
+            if result["existing"]:
+                count["existing"] += 1
+            else:
+                count["new"] += 1
+        logger.info(f"New businesses: {count['new']}, Existing businesses: {count['existing']}")
+    print("Service run complete.")

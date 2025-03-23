@@ -1,11 +1,20 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 
 class BusinessSchema(BaseModel):
     id: int | None = Field(default=None)
     name: str
-    industry: str | None = None
-    location: str | None = None
+    industry: Optional[str] = None
+    address: Optional[str] = None
+    address2: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip: Optional[str] = None
+    phone: Optional[str] = None
+    website: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    sources: List["SourceSchema"] = []
 
     class Config:
         from_attributes = True
@@ -14,9 +23,12 @@ class ContactSchema(BaseModel):
     id: int | None = Field(default=None)
     first_name: str
     last_name: str
-    email: str | None = None
-    phone: str | None = None
-    title: str | None = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    title: Optional[str] = None
+    notes: Optional[str] = None
+    businesses: List["BusinessSchema"] = []
+    sources: List["SourceSchema"] = []
 
     class Config:
         from_attributes = True
@@ -32,6 +44,9 @@ class SourceSchema(BaseModel):
     id: int | None = Field(default=None)
     name: str
     url: Optional[str] = None
+    notes: Optional[str] = None
+    businesses: List["BusinessSchema"] = []
+    contacts: List["ContactSchema"] = []
 
     class Config:
         from_attributes = True
@@ -39,3 +54,29 @@ class SourceSchema(BaseModel):
 class SourceData(BaseModel):
     source_id: int
     data: dict
+
+    class Config:
+        from_attributes = True
+
+class LocationSchema(BaseModel):
+    zipCode: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class CoverageZipListSchema(BaseModel):
+    id: Optional[int] = Field(default=None, description="Unique identifier for the coverage zip list")
+    params: str = Field(..., description="Parameters used to generate the zip list (e.g., state, radius)")
+    zips: str = Field(..., description="Comma-separated list of zip codes")
+
+    class Config:
+        from_attributes = True
+        json_schema_extra = {
+            "example": {
+                "id": 1,
+                "params": "state=Tennessee,radius=25",
+                "zips": "37010,37011,37012,37013"
+            }
+        }
