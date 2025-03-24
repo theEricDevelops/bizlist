@@ -23,6 +23,7 @@ shapely
 folium
 scikit-learn
 numpy
+dnspython
 
 # For Machine Learning APIs
 openai
