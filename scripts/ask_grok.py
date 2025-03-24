@@ -1,14 +1,11 @@
 import requests
-import asyncio
 import os
 import sys
-from asyncio import Semaphore
-from openai import AsyncOpenAI, AsyncClient
+from openai import OpenAI
 from bs4 import BeautifulSoup
 import re
 import json
-from urllib.parse import urljoin
-from typing import List, Dict, Literal
+from typing import List, Dict
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 
@@ -18,23 +15,6 @@ load_dotenv('.env', override=True)
 
 from api.logger import Logger
 log = Logger('ask-grok')
-
-log.debug(f"Environment variables: {os.environ}")
-
-class CompanyWebSearch(BaseModel):
-    name: str = Field(description="The name of the company to search for.")
-    industry: str = Field(description="The industry or sector of the company.")
-    location: str = Field(description="The location of the company.")
-    phone: str = Field(description="The phone number of the company.")
-    website: str = Field(description="The website of the company.")
-
-class ContactWebSearch(BaseModel):
-    name: str = Field(description="The name of the person to search for.")
-    company: str = Field(description="The company the person works for.")
-    title: str = Field(description="The job title of the person.")
-    location: str = Field(description="The location of the person.")
-    email: str = Field(description="The email address of the person.")
-    linkedin: str = Field(description="The LinkedIn profile URL of the person.")
 
 class WebSearchRequest(BaseModel):
     query: str = Field(description="The search query")
@@ -53,44 +33,36 @@ class FindPatternsRequest(BaseModel):
 class ExtractStructuredDataRequest(BaseModel):
     html: str = Field(description="The HTML content to parse")
 
-class AskGrok:
-    def __init__(self, api_key: str= None, client: AsyncClient = None):
+class AskGrokSync:
+    def __init__(self, api_key: str = None, client: OpenAI = None):
         if not api_key:
             try:
                 log.debug(f"API key not provided. Checking environment variable.")
                 api_key = os.getenv("XAI_API_KEY")
                 if api_key:
                     log.debug(f"API key {api_key} found in environment variable.")
-            except KeyError:
-                log.critical("API key is required.")
-                raise ValueError("API key is required.")
+            except KeyError as e:
+                log.critical(f"API key is required.: {e}")
+
         if not client:
             log.info("Creating new OpenAI client.")
-            self.client = AsyncOpenAI(api_key=api_key)
-
-    async def send_request(self, sem: Semaphore, request: str, functions: List[Dict]=None) -> dict:
-        """Send a single request to xAI with semaphore control and optional function calling."""
-        async with sem:
-            return await self.client.chat.completions.create(
-                model="grok-2-latest",
-                messages=[{"role": "user", "content": request}],
-                tools=functions,
-                tool_choice="auto"
-            )
-
-    async def process_requests(self, requests: List[str], functions: List[Dict]=None, max_concurrent: int = 2) -> List[dict]:
-        """Process multiple requests with controlled concurrency and optional function calling."""
-        # Create a semaphore that limits how many requests can run at the same time
-        # Think of it like having only 2 "passes" to make requests simultaneously
-        sem = Semaphore(max_concurrent)
-
-        # Create a list of tasks (requests) that will run using the semaphore
-        tasks = [self.send_request(sem, request, functions) for request in requests]
-
-        # asyncio.gather runs all tasks in parallel but respects the semaphore limit
-        # It waits for all tasks to complete and returns their results
-        return await asyncio.gather(*tasks)
-
+            self.client = OpenAI(api_key=api_key, base_url='https://api.xai.com/v1')
+    
+    def send_request(self, request: str, functions: List[Dict]=None) -> dict:
+        """Send a single request to xAI with optional function calling."""
+        return self.client.chat.completions.create(
+            model="grok-2-latest",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": request}
+            ],
+            tools=functions,
+            tool_choice="auto"
+        )
+    
+    def process_requests(self, requests: List[str], functions: List[Dict]=None) -> List[dict]:
+        """Process multiple requests sequentially with optional function calling."""
+        return [self.send_request(request, functions) for request in requests]
 
 def search_web(**kwargs) -> List[Dict[str, str]]:
     """
@@ -263,7 +235,7 @@ tools_definition = [
     },
 ]
 
-async def main() -> None:
+def main() -> None:
     log.info("Starting main function.")
     """Main function to handle requests and display responses."""
 
@@ -276,25 +248,28 @@ async def main() -> None:
         "Extract structured data from the OpenAI website"
     ]
 
-    provider = AskGrok()
-    log.debug(f"Processing {len(requests)} requests with {provider}.")
+    request = "Find information about the owner of Findlay Roofing in Atlanta. I need a name, phone number, and email address."
+
+    provider = AskGrokSync()
 
     # This starts processing all asynchronously, but only 2 at a time
     # Instead of waiting for each request to finish before starting the next,
     # we can have 2 requests running at once, making it faster overall
-    responses = await provider.process_requests(requests, functions=tools_definition)
-
-    # Print each response in order
-    for i, response in enumerate(responses):
-        log.debug(f"# Response {i}:")
-        log.debug(f"Response: {response.choices[0].message.content}")
-        if response.choices[0].message.tool_calls:
-            for tool_call in response.choices[0].message.tool_calls:
-                function_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
-                log.debug(f"Calling function {function_name} with arguments: {arguments}")
-                result = globals()[function_name](**arguments)
-                log.info(f"Function {function_name} returned: {result}")
+    response = provider.send_request(requests, functions=tools_definition)
+    if response:
+        try:
+            log.debug(f"Response: {response.choices[0].message.content}")
+            if response.choices[0].message.tool_calls:
+                for tool_call in response.choices[0].message.tool_calls:
+                    function_name = tool_call.function.name
+                    arguments = json.loads(tool_call.function.arguments)
+                    log.debug(f"Calling function {function_name} with arguments: {arguments}")
+                    result = globals()[function_name](**arguments)
+                    log.info(f"Function {function_name} returned: {result}")
+        except AttributeError as e:
+            log.error(f"Error processing response: {e}")
+        except Exception as e:
+            log.error(f"Unexpected error processing response: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main(), debug=True)
+    main()
