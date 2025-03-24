@@ -1,12 +1,32 @@
 # /requirements.txt
 
+# Core dependencies
 fastapi
 uvicorn
-psycopg2-binary  # For PostgreSQL database connection
-beautifulsoup4
-requests  # For making HTTP requests to APIs (if needed)
-pytest
-pytest-cov  # For code coverage reporting (optional, but recommended)
-python-dotenv # For environment variables
+requests
+python-dotenv
+
+# Database dependencies
+sqlalchemy
+psycopg2-binary
 alembic
+
+# Scraping dependencies
+beautifulsoup4
+selenium
+lxml
+
+# For Zip Code API
+pandas
+geopandas
+shapely
+folium
+scikit-learn
+numpy
+
+# For Machine Learning APIs
 openai
+
+# Testing dependencies
+pytest
+pytest-cov
