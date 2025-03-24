@@ -1,6 +1,7 @@
 import os
 import re
 import requests
+import uuid
 from schemas import SourceData, SourceSchema, BusinessSchema
 from models import Business, Source, BusinessSource
 
@@ -370,7 +371,7 @@ def get_top_level_url(url: str) -> str:
         logger.error(f"Error extracting top-level URL: {e}")
         return None
 
-def add_or_find_source(db: Session, source: SourceSchema) -> int:
+def add_or_find_source(db: Session, source: SourceSchema) -> uuid.UUID:
     source_name = source.name
     source_url = source.url
     existing_source = db.query(Source).filter(Source.name == source_name).first()
