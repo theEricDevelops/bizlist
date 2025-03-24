@@ -24,6 +24,10 @@ import csv  # Added for CSV handling
 
 from urllib.parse import urlparse
 
+PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
+DOWNLOAD_DIR = os.path.join(PROJECT_DIR, os.getenv("DOWNLOAD_DIR", "downloads"))
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
 # Configure logging
 log_folder = os.getenv("LOG_FOLDER", "/logs")
 log_folder = os.path.abspath(log_folder)
@@ -223,32 +227,40 @@ def get_address_parts(address_str: str) -> Tuple[str, str, str, str, str]:
 
 def send_company_to_llm_for_contact_info(html: str, expected: List[str]) -> Dict:
     system_message = """
-        You are a web scraping expert. You will recieve a JSON with any combination of the following:
+        You are a web scraping expert. You will receive a JSON with any combination of the following company information:
 
+        - name: string (company name)
+        - phone: string (company phone)
+        - email: string (company email)
+        - address: string (company address)
+        - website: string (company website)
+        - industry: string (company industry)
+
+        Your task is to search the web to complete the remaining fields and to attempt to find the owner's information.
+
+        You have access to the following functions:
+        - search_web(query: str) -> List[Dict[str, str]]: Searches the web for the query and returns a list of results, each with 'title', 'url', and 'snippet'.
+        - get_webpage(url: str) -> str: Retrieves the HTML content of the URL.
+        - extract_text(html: str, selector: str) -> str: Extracts text from the HTML using the CSS selector.
+        - find_patterns(text: str, pattern: str) -> List[str]: Finds all matches of the regex pattern in the text.
+        - extract_structured_data(html: str) -> Dict: Extracts structured data (JSON-LD or microdata) from the HTML.
+
+        Use these functions to gather the required information.
+
+        Your output should be a JSON object with the following fields:
         - company_name: string
-        - phone: string
-        - email: string
-        - address: string
-        - website: string
-        - industry: string
+        - company_phone: string
+        - company_email: string
+        - company_address: string
+        - company_website: string
+        - company_industry: string
+        - owner_name: string
+        - owner_phone: string
+        - owner_email: string
+        - owner_address: string
+        - owner_linkedin: string
 
-        Your task is to search the web to complete the remaining fields and to attempt to find the owner's information. 
-
-        Your output should be structured as follows:
-
-        {
-            "company_name": "AI Roofing",
-            "company_phone": "1234567890",
-            "company_email": "sales@airoofing.com",
-            "company_address": "123 Main St, Springfield, IL 62701",
-            "company_website": "https://www.airoofing.com",
-            "company_industry": "Roofing",
-            "owner_name": "Joe Smith",
-            "owner_phone": "1234567890",
-            "owner_email": "joe@airoofing.com",
-            "owner_address": "123 Main St, Springfield, IL 62701",
-            "owner_linkedin": "https://www.linkedin.com/in/joesmith"
-        }
+        If you cannot find a particular piece of information, set its value to null.
     """
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
@@ -602,22 +614,64 @@ def extract_gaf_data(db: Session, location: dict, radius: int = 25, max_pages: i
     logger.debug(f"Extracted GAF data: {gaf_source_data}")
     return gaf_source_data
 
-zip_codes = ['31084', '30527', '31546', '31539', '30452', '30823', '39862', '31810', '30178', '30724', '31409', '31548', '30426', '39854', '30516', '31719', '31636', '30108', '39832', '30537', '30075', '31833', '31087', '31798', '31327', '30809', '31562', '30559', '31303', '30257', '30401', '31704', '31626', '31631', '31999', '30427', '30175', '31747', '31099', '30025', '31550', '31040', '30290', '30668', '39834', '30728', '30622', '31033', '31516', '31009', '30241', '31030', '31642', '30039']
-tn_zip_codes = ['38359', '38069', '37308', '38544', '37877', '37733', '37066', '37659', '37043', '38126', '38080', '38488', '37680', '37851', '37380', '38251', '38575', '38067', '38572', '37753', '37765', '38365', '38041', '37882', '37028', '38577', '38257', '37405', '37305', '38006', '37179', '37078', '38358', '37026', '37934', '38486', '37333', '38483', '37352', '37846', '37187', '38363']
+def export_to_csv(data: List[Business]) -> str:
+    """Exports data to a CSV file."""
+    filename = f"export_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+    filepath = os.path.join(DOWNLOAD_DIR, filename)
+    logger.debug(f"Exporting data to CSV: {filepath}")
+
+    try:
+        with open(filepath,
+                mode='w',
+                newline='') as file:
+            writer = csv.DictWriter(file, fieldnames=data[0].keys())
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+        logger.info(f"Data exported to CSV: {filename}")
+    except Exception as e:
+        logger.exception(f"An unexpected error occurred while exporting data to CSV: {e}")
+        return None
+    return filename
+    
+
+processed_zips = ['19941', '19731', '81433', '80232', '80538', '81228', '81652', '81424', '81503', '80821', '80701', '81059', '80759', '81640', '80105', '81049', '81137', '80721', '81231', '80545', '81653', '81091', '80426', '81654', '80801', '80456', '80447', '81047', '80833', '81525', '80643', '81324', '80862', '81027', '80755', '81522', '81641', '81235', '81136', '80612', '81090', '81138', '81403', '81635', '80434', '80117', '81329', '80749', '80474', '80720', '81332', '81019', '80757', '81039', '81055', '81076', '80919', '81248', '81419', '81657', '81626', '81321', '81073', '81057', '81130', '80477', '80805', '81008', '81148', '80736', '81648', '80729', '81215', '80810', '81147', '81132', '81128', '80745', '81131', '81029', '81050', '81071', '81610', '81334', '80820', '80459', '81054', '80861', '81155', '80611', '81638', '80108', '81045', '81415', '65462', '63624', '65348', '65720', '64739', '64085', '64438', '63533', '63084', '65054', '65280', '64866', '63966', '65438', '64756', '64645', '63769', '63879', '63454', '64448', '64446', '65760', '63102', '65660', '65256', '63666', '63942', '65781', '63465', '65681', '64752', '64145', '65355', '64832', '65082', '64863', '63829', '63431', '65535', '65351', '64458', '63627', '63535', '63433', '64461', '65069', '64451', '63956', '65733', '65791', '63953', '64781', '65464', '64674', '65039', '65712', '65783', '65236', '63347', '63742', '64640', '63881', '63866', '65722', '64637', '71497', '70585', '70466', '71425', '71459', '70759', '71284', '70668', '70469', '71064', '71467', '70353', '70426', '71253', '71256', '70081', '70643', '71473', '70761', '71316', '71486', '71375', '70653', '70358', '70631', '70450', '71424', '70581', '71080', '70057', '70721', '71240', '70503', '71047', '70040', '70380', '70513', '71072', '70658', '70510', '71032', '71269', '71234', '70521', '70085', '70394', '97336', '97543', '97496', '97378', '97522', '97722', '97638', '97751', '97856', '97761', '97830', '97758', '97859', '97017', '97463', '97064', '97480', '97710', '97021', '97907', '97731', '97738', '97901', '97411', '97712', '97444', '97873', '97635', '97435', '97369', '97121', '97636', '97014', '97350', '97134', '97627', '97838', '97884', '97449', '97050', '97862', '97754', '97739', '97530', '97880', '97484', '97842', '97415', '97413', '97632', '97321', '97231', '97033', '97604', '97914', '97750', '97028', '97466', '97641', '97447', '97906', '97456', '97848', '97732', '97639', '97637', '97703', '97917', '97867', '97857', '97902', '97839', '97840', '97736', '97904', '97620', '97818', '97910', '97721', '97622', '97885', '97870', '97624', '97817', '97868', '58420', '58549', '58650', '58451', '58636', '58788', '58835', '58029', '58251', '58830', '58260', '58645', '58456', '58008', '58651', '58464', '58772', '58581', '58631', '58225', '58239', '58538', '58219', '58332', '58558', '58783', '58043', '58757', '58109', '58639', '58479', '58602', '58436', '58844', '58838', '58265', '58782', '58321', '58487', '58632', '58422', '58634', '58207', '58845', '58562', '58849', '58277', '58620', '58566', '58382', '58569', '58571', '58540', '58769', '58033', '58705', '58316', '58723', '58579', '58779', '58353', '58765', '58461', '58027', '58379', '22937', '23146', '24347', '23884', '23941', '24578', '22547', '22654', '24363', '24265', '23398', '24131', '24635', '23356', '23887', '24484', '24520', '24538']
 
 if __name__ == "__main__":
     count = {'new': 0, 'existing': 0}
     from dependencies import get_db_conn
+    from models import CoverageZipList
     print("Running service directly...")
+    zip_codes = []
+
     db = next(get_db_conn())
-    for zip_code in tn_zip_codes:
-        logger.info(f"Extracting data for ZIP code: {zip_code}")
-        businesses = extract_gaf_data(db, {"zipCode": zip_code}, 25)  # Updated to use loop variable
-        for business in businesses:
-            result = insert_company_data(db, business)
-            if result["existing"]:
-                count["existing"] += 1
-            else:
-                count["new"] += 1
-        logger.info(f"New businesses: {count['new']}, Existing businesses: {count['existing']}")
+
+    logger.info("Extracting areas from db...")
+    all_params = db.execute(select(CoverageZipList.params).distinct()).scalars().all()
+    states = []
+    for param in all_params:
+        try:
+            states.append(eval(param)["area"])
+        except Exception as e:
+            logger.error(f"Error parsing area: {e}")
+
+    for state in states:
+        logger.debug(f"Extracting ZIP codes for state: {state}")
+        state_zips = db.query(CoverageZipList).filter(CoverageZipList.params.like(f'%area\': \'{state}\'%')).all()
+        for zip_entry in state_zips:
+            zip_codes.extend(zip_entry.zips.split(','))
+    
+    logger.info(f"Extracted ZIP codes: {zip_codes}")
+    for zip_code in zip_codes:
+        if zip_code not in processed_zips:
+            logger.debug(f"Extracting data for ZIP code: {zip_code}")
+            businesses = extract_gaf_data(db, {"zipCode": zip_code}, 25)
+            for business in businesses:
+                logger.debug(f"Adding business: {business}")
+                result = insert_company_data(db, business)
+                if result["existing"]:
+                    count["existing"] += 1
+                else:
+                    count["new"] += 1
+            logger.info(f"New businesses: {count['new']}, Existing businesses: {count['existing']}")
     print("Service run complete.")

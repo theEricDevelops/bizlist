@@ -633,7 +633,7 @@ def main():
         logging.info(f"Total zip codes selected: {len(all_zips)}")
         logging.info(f"Unique zip codes selected: {len(set(all_zips))}")
         zip_list = ",".join(all_zips)
-        zip_schema = CoverageZipListSchema(params={'area': states, 'radius': radius}, zips=zip_list)
+        zip_schema = CoverageZipListSchema(params=str({'area': states, 'radius': radius}), zips=zip_list)
         zip_model = CoverageZipList(**zip_schema.model_dump())
 
         db.add(zip_model)
