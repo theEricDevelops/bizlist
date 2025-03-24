@@ -1,6 +1,6 @@
 # main.py
 import os
-import logging
+from api.logger import Logger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,17 +10,13 @@ from api.routes import router
 log_folder = os.getenv("LOG_FOLDER", "logs")
 log_folder = os.path.abspath(log_folder)
 log_file = os.path.join(log_folder, os.getenv("LOG_FILE", "bizlist.log"))
-log_format = os.getenv("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
 os.makedirs(log_folder, exist_ok=True)
 
-log_level_str = os.getenv("LOG_LEVEL", "DEBUG")
-log_level = getattr(logging, log_level_str.upper(), logging.DEBUG)
+log_level = os.getenv("LOG_LEVEL", "DEBUG")
 
-logger = logging.getLogger(__name__)
-logger.setLevel(log_level)
-lh = logging.FileHandler(log_file, mode="w")
-lh.setFormatter(logging.Formatter(log_format))
-logger.addHandler(lh)
+# Create logger
+log = Logger(__name__, log_file, log_level, console_log=True)
 
 app = FastAPI()
 

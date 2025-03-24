@@ -3,7 +3,7 @@ import re
 import requests
 import uuid
 from schemas import SourceData, SourceSchema, BusinessSchema
-from models import Business, Source, BusinessSource
+from models import Business, Contact, Source, BusinessSource
 
 from typing import List, Dict, Tuple
 from sqlalchemy.orm import Session
@@ -226,9 +226,22 @@ def get_address_parts(address_str: str) -> Tuple[str, str, str, str, str]:
     logger.debug(f"Extracted address parts: {address1}, {address2}, {city}, {state}, {zip_code}")
     return (address1, address2, city, state, zip_code)
 
-def send_company_to_llm_for_contact_info(html: str, expected: List[str]) -> Dict:
+def ask_ai_for_contact_info(client: OpenAI, system_message: str, info: Business | Contact, model: str) -> Dict:
+    """Sends a prompt to the AI model to attempt to find contact info using tools."""
+    completion = client.chat.completions.create(
+        model="grok-2-latest",
+        messages=[
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": info.to_json()},
+        ],
+    )
+    logger.debug(f"AI response: {completion}")
+    response = completion.choices[0].message.content
+    return response
+
+def get_complete_contact_info(info: Business | Contact) -> Dict:
     system_message = """
-        You are a web scraping expert. You will receive a JSON with any combination of the following company information:
+        You are a web scraping expert. You will receive a JSON object string with any combination of the following company information:
 
         - name: string (company name)
         - phone: string (company phone)
@@ -269,22 +282,9 @@ def send_company_to_llm_for_contact_info(html: str, expected: List[str]) -> Dict
         return None
     client = OpenAI(api_key=api_key, base_url="https://api.x.ai/v1")
     logger.info("Sending info to LLM for contact info...")
-    logger.debug(f"Sent: {html}")
-    completion = client.chat.completions.create(
-        model="grok-2-latest",
-        messages=[
-            {"role": "system", "content": system_message},
-            {"role": "user", "content": html},
-        ],
-    )
-    logger.debug(f"AI response: {completion}")
-    print(completion.choices[0].message.content)
-    return {
-        "companies": [ 
-            {"company": "AI Roofing", "phone": "1234567890", "details_url": "https://www.airoofing.com"},
-            {"company": "AI Roofing 2", "phone": "1234567890", "details_url": "https://www.airoofing2.com"}
-        ]
-    }
+    model = "grok-2-latest"
+    response = ask_ai_for_contact_info(client, system_message, info, model)
+    return response
 
 def update_business(db: Session, business: Business, data: BusinessSchema) -> Business:
     business.name = data.name
