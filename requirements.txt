@@ -31,3 +31,8 @@ openai
 # Testing dependencies
 pytest
 pytest-cov
+
+# For Google APIs
+google-auth-oauthlib 
+google-auth-httplib2 
+google-api-python-client

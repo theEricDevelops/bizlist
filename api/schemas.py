@@ -81,3 +81,34 @@ class CoverageZipListSchema(BaseModel):
                 "zips": "37010,37011,37012,37013"
             }
         }
+
+class ZipCodeSchema(BaseModel):
+    zip: str = Field(default=None, description="The zip code")
+    plus4: bool = Field(default=False, description="Whether the zip code has a plus 4 extension")
+    city: str = Field(default=None, description="The city associated with the zip code")
+    state: str = Field(default=None, description="The state associated with the zip code")
+    county: Optional[str] = Field(default=None, description="The county associated with the zip code")
+    latitude: Optional[float] = Field(default=None, description="The latitude of the zip code")
+    longitude: Optional[float] = Field(default=None, description="The longitude of the zip code")
+    timezone: Optional[str] = Field(default=None, description="The timezone of the zip code")
+
+class WebSearchCacheSchema(BaseModel):
+    id: Optional[uuid.UUID] = Field(default=None, description="Unique identifier for the web search cache")
+    params: dict = Field(..., description="Parameters used to generate the search results")
+    data: dict = Field(..., description="Results from web search")
+
+    class Config:
+        from_attributes = True
+
+class OwnerSearchSchema(BaseModel):
+    company_name: str = Field(description="The name of the company")
+    company_phone: str = Field(description="The phone number of the company in digital-only format i.e. 1234567890")
+    company_email: str = Field(description="The email address of the company")
+    company_address: str = Field(description="The address of the company in proper format i.e. Street, Street 2, City, State, Zip")
+    company_website: str = Field(description="The website of the company with protocol i.e. https://example.com")
+    company_industry: str = Field(description="The industry of the company")
+    owner_name: str = Field(description="The name of the owner")
+    owner_phone: str = Field(description="The phone number of the owner in digital-only format i.e. 1234567890")
+    owner_email: str = Field(description="The email address of the owner")
+    owner_address: str = Field(description="The address of the owner")
+    owner_linkedin: str = Field(description="The LinkedIn profile URL of the owner")

@@ -169,7 +169,7 @@ def send_to_llm(html: str, expected: List[str] = []):
         logger.error(f"Error sending to LLM: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
-@router.post("/internal/zip-list/", response_model=CoverageZipListSchema)
+@router.post("/internal/zip/list/", response_model=CoverageZipListSchema)
 def create_coverage_zip_list(coverage_zip_list: CoverageZipListSchema, db: Session = Depends(get_db)):
     """Create a new coverage zip list."""
     try:
@@ -186,9 +186,9 @@ def create_coverage_zip_list(coverage_zip_list: CoverageZipListSchema, db: Sessi
         logger.error(f"Error creating coverage zip list: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
-@router.get("/internal/zip-lists/", response_model=List[CoverageZipListSchema])
+@router.get("/internal/zip/lists/", response_model=List[CoverageZipListSchema])
 def read_coverage_zip_lists(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Read all coverage zip lists."""
+    """Returns a list of coverage zip lists."""
     try:
         coverage_zip_lists = db.query(CoverageZipList).offset(skip).limit(limit).all()
         return coverage_zip_lists
@@ -199,7 +199,7 @@ def read_coverage_zip_lists(skip: int = 0, limit: int = 100, db: Session = Depen
         logger.error(f"Error reading coverage zip lists: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
 
-@router.get("/internal/zip-list/{coverage_zip_list_id}", response_model=CoverageZipListSchema)
+@router.get("/internal/zip/list/{coverage_zip_list_id}", response_model=CoverageZipListSchema)
 def read_coverage_zip_list(coverage_zip_list_id: int, db: Session = Depends(get_db)):
     """Read a specific coverage zip list by ID."""
     try:
@@ -212,4 +212,19 @@ def read_coverage_zip_list(coverage_zip_list_id: int, db: Session = Depends(get_
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     except Exception as e:
         logger.error(f"Error reading coverage zip list: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    
+@router.get("/internal/zip/location/{zip}",)
+def read_zip_location(zip: str, db: Session = Depends(get_db)):
+    """Read the location of a specific zip code."""
+    try:
+        coverage_zip_list = db.query(CoverageZipList).filter(CoverageZipList.zip == zip).first()
+        if coverage_zip_list is None:
+            raise HTTPException(status_code=404, detail="Zip code not found")
+        return coverage_zip_list
+    except SQLAlchemyError as e:
+        logger.error(f"Error reading zip code location: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    except Exception as e:
+        logger.error(f"Error reading zip code location: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
