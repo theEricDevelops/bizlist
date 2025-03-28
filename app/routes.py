@@ -6,13 +6,18 @@ from typing import List
 import logging
 
 from app.core.database import get_db
-from app.dependencies import get_db_conn
-from app.schemas import BusinessSchema, ContactSchema, SourceSchema, LocationSchema, CoverageZipListSchema
-from app.services import extract_gaf_data, insert_company_data, send_company_to_llm_for_contact_info, export_to_csv
-from app.models import Business, Contact, Source, CoverageZipList, EmailMessage
+from app.schemas.contact import BusinessSchema, ContactSchema, SourceSchema
+from app.schemas.location import LocationSchema, CoverageZipListSchema
+from app.models.contact import Business, Contact
+from app.models.source import Source
+from app.models.location import CoverageZipList
+from app.models.email import EmailMessage
 from app.services.gmail import GmailService
+from app.services.business import BusinessService
+from app.services.scrapers.gaf import GAFScraper
 
 mail = GmailService()
+business_service = BusinessService()
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +26,6 @@ router = APIRouter()
 @router.get("/")
 async def root():
     return {"message": "Welcome to the BizList API!"}
-
-
 
 @router.post("/contact/", response_model=ContactSchema)
 def create_contact(contact: ContactSchema, db: Session = Depends(get_db)):
@@ -97,14 +100,16 @@ def read_source(source_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.post("/scrape/gaf", response_model=List[BusinessSchema])
-def extract_gaf(location: LocationSchema, radius: int = 25, max_pages: int = -1, db: Session = Depends(get_db_conn)):
+def extract_gaf(location: LocationSchema, radius: int = 25, max_pages: int = -1, db: Session = Depends(get_db)):
     """Extract data from GAF based on location and radius."""
+    gaf = GAFScraper()
     try:
         logger.info(f"Extracting GAF data for location: {location.model_dump()}, radius: {radius}, max_pages: {max_pages}")
-        source_data = extract_gaf_data(db, location.model_dump(), radius, max_pages)
+        data = gaf._get_all_listings(db, location.model_dump(), radius, max_pages)
         businesses = []
-        for company in source_data:
-            result = insert_company_data(db, company)
+        
+        for business in data:
+            result = business_service.add(db, business)
             if result and "business" in result:
                 businesses.append(result["business"])
         return businesses
@@ -121,7 +126,8 @@ def send_to_llm(html: str, expected: List[str] = []):
     """Send HTML to LLM for contact info extraction."""
     try:
         logger.info(f"Sending HTML to LLM for contact info extraction.")
-        result = send_company_to_llm_for_contact_info(html, expected)
+        
+        result = {"status": "Need to do this"}
         return result
     except Exception as e:
         logger.error(f"Error sending to LLM: {e}")

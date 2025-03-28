@@ -1,17 +1,15 @@
-import os
-import csv 
-import time
-from app.main import config
+
+from app.core.config import config
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import List
-from app.models.contacts import Business
-from app.schemas import BusinessSchema
+from app.models.contact import Business
+from app.schemas.contact import BusinessSchema
 from app.services.logger import Logger
 from app.services.formatter import Formatter
 from app.services.exporter import Exporter
 from app.models.source import BusinessSource, Source
-from app.schemas import SourceData
+from app.schemas.source import SourceData
 
 log = Logger('service-business')
 format = Formatter()

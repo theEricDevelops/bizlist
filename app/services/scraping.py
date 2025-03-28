@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from app.services.logger import Logger
 from urllib.parse import urlparse
-from app.models.zip import CoverageZipList
+from app.models.location import CoverageZipList
 
 log = Logger('service-scraping', log_level='INFO')
 html_log = Logger('service-scraping-html')

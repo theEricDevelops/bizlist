@@ -9,9 +9,8 @@ from app.core.database import get_db
 from app.services.logger import Logger
 from app.services.exporter import Exporter
 
-from app.models.contacts import Business
-from app.models.source import BusinessSource
-from app.schemas import BusinessSchema
+from app.models.contact import Business
+from app.schemas.contact import BusinessSchema
 
 log = Logger('router-business')
 
