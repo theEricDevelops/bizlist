@@ -11,13 +11,3 @@ class Source(Base):
     notes = Column(String)
     businesses = relationship("Business", secondary="business_sources", back_populates="sources")
     contacts = relationship("Contact", secondary="source_contacts", back_populates="sources")
-
-class BusinessSource(Base):
-    __tablename__ = "business_sources"
-    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id"), primary_key=True)
-    source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id"), primary_key=True)
-    
-class SourceContact(Base):
-    __tablename__ = "source_contacts"
-    source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id"), primary_key=True)
-    contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"), primary_key=True)

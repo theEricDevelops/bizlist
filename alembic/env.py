@@ -10,6 +10,12 @@ from sqlalchemy import pool
 from alembic import context
 
 from app.models import Base
+try:
+    import app.models
+    print(f"app.models import from: {app.models.__file__}")
+except ImportError as e:
+    print(f"Error importing app.models: {e}")
+    raise
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -28,6 +34,11 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
+
+try:
+    print(target_metadata.tables.keys())
+except Exception as e:
+    print(f"Error accessing target_metadata: {e}")
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

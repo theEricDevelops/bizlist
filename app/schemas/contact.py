@@ -35,6 +35,7 @@ class ContactSchema(BaseModel):
         from_attributes = True
 
 class BusinessContactSchema(BaseModel):
+    id: Optional[uuid.UUID] = Field(default=uuid.uuid4())
     business_id: uuid.UUID
     contact_id: uuid.UUID
 

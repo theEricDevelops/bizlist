@@ -1,4 +1,4 @@
-from models import Base, generate_uuid
+from app.models import Base, generate_uuid
 from sqlalchemy import Column, String, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 import datetime

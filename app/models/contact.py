@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, ForeignKey
+from sqlalchemy import Column, String, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models import Base, generate_uuid
@@ -31,8 +31,3 @@ class Contact(Base):
     notes = Column(String)
     businesses = relationship("Business", secondary="business_contacts", back_populates="contacts")
     sources = relationship("Source", secondary="source_contacts", back_populates="contacts")
-
-class BusinessContact(Base):
-    __tablename__ = "business_contacts"
-    business_id = Column(UUID(as_uuid=True), ForeignKey("businesses.id"), primary_key=True)
-    contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"), primary_key=True)
