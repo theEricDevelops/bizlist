@@ -33,9 +33,9 @@ logger = logging.getLogger(__name__)
 
 # Add the project directory to the system path
 sys.path.insert(0, project_dir)
-from api.schemas import CoverageZipListSchema
-from api.models import CoverageZipList
-from api.dependencies import get_db_conn
+from app.schemas import CoverageZipListSchema
+from app.models import CoverageZipList
+from app.dependencies import get_db_conn
 
 class ZipCodeCoverage:
     def __init__(self, zip_csv_path: str, boundary_shapefile_path: str):

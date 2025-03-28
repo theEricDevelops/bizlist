@@ -11,8 +11,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 load_dotenv('.env')
 
-from api.logger import Logger
-from api.helpers.searchapi import SearchAPI
+from app.services.logger import Logger
+from app.helpers.searchapi import SearchAPI
 log = Logger('helper-grok-api')
 
 class WebSearchRequest(BaseModel):

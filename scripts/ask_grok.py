@@ -12,7 +12,7 @@ PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_DIR)
 load_dotenv('.env', override=True)
 
-from api.logger import Logger
+from app.services.logger import Logger
 log = Logger('ask-grok')
 
 class WebSearchRequest(BaseModel):

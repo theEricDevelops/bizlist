@@ -5,7 +5,7 @@ import requests
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 load_dotenv('.env')
-from api.logger import Logger
+from api.services.logger import Logger
 from api.models import WebSearchCache
 from api.dependencies import get_db_conn
 

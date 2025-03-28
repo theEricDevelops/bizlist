@@ -9,7 +9,7 @@ from sqlalchemy import pool
 
 from alembic import context
 
-from api.models import Base
+from app.models import Base
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 

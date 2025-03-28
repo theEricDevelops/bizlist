@@ -5,9 +5,9 @@ from typing import Dict, List
 # Add the root directory to the path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from api.logger import Logger
-from api.helpers.aitools import search_web, get_webpage, extract_text, find_patterns, extract_structured_data, tools_definition
-from api.schemas import OwnerSearchSchema
+from app.services.logger import Logger
+from app.helpers.aitools import search_web, get_webpage, extract_text, find_patterns, extract_structured_data, tools_definition
+from app.schemas import OwnerSearchSchema
 
 # Initialize the logger
 log = Logger('helper-grok-api')

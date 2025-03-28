@@ -5,11 +5,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from typing import List
 import logging
 
-from api.database import get_db
-from api.dependencies import get_db_conn
-from api.schemas import BusinessSchema, ContactSchema, SourceSchema, LocationSchema, CoverageZipListSchema
-from api.services import extract_gaf_data, insert_company_data, send_company_to_llm_for_contact_info, export_to_csv
-from api.models import Business, Contact, Source, CoverageZipList
+from app.core.database import get_db
+from app.dependencies import get_db_conn
+from app.schemas import BusinessSchema, ContactSchema, SourceSchema, LocationSchema, CoverageZipListSchema
+from app.services import extract_gaf_data, insert_company_data, send_company_to_llm_for_contact_info, export_to_csv
+from app.models import Business, Contact, Source, CoverageZipList, EmailMessage
+from app.services.gmail import GmailService
+
+mail = GmailService()
 
 logger = logging.getLogger(__name__)
 
@@ -19,52 +22,7 @@ router = APIRouter()
 async def root():
     return {"message": "Welcome to the BizList API!"}
 
-@router.post("/business/", response_model=BusinessSchema)
-def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
-    """Create a new business."""
-    try:
-        db_business = Business(**business.model_dump(exclude={"id", "sources", "contacts"}))
-        db.add(db_business)
-        db.commit()
-        db.refresh(db_business)
-        return db_business
-    except SQLAlchemyError as e:
-        db.rollback()
-        logger.error(f"Error creating business: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@router.get("/businesses/", response_model=List[BusinessSchema])
-def read_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Read all businesses."""
-    try:
-        businesses = db.query(Business).offset(skip).limit(limit).all()
-        return businesses
-    except SQLAlchemyError as e:
-        logger.error(f"Error reading businesses: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
-@router.get("/businesses/export", response_model=List[BusinessSchema])
-def read_businesses_export(db: Session = Depends(get_db)):
-    """Read all businesses for export."""
-    try:
-        businesses = db.query(Business).all()
-        response = export_to_csv(businesses)
-        return response
-    except SQLAlchemyError as e:
-        logger.error(f"Error reading businesses for export: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-@router.get("/business/{business_id}", response_model=BusinessSchema)
-def read_business(business_id: int, db: Session = Depends(get_db)):
-    """Read a specific business by ID."""
-    try:
-        business = db.query(Business).filter(Business.id == business_id).first()
-        if business is None:
-            raise HTTPException(status_code=404, detail="Business not found")
-        return business
-    except SQLAlchemyError as e:
-        logger.error(f"Error reading business: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
 @router.post("/contact/", response_model=ContactSchema)
 def create_contact(contact: ContactSchema, db: Session = Depends(get_db)):
@@ -227,4 +185,15 @@ def read_zip_location(zip: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     except Exception as e:
         logger.error(f"Error reading zip code location: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")
+    
+@router.post("/internal/email/send", response_model=EmailMessage)
+def send_mail(email: str, subject: str, body: str):
+    """Send an email to the specified address."""
+    try:
+        message = mail.draft(email, subject, body)
+        result = mail.send(message)
+        return result
+    except Exception as e:
+        logger.error(f"Error sending email: {e}")
         raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {e}")

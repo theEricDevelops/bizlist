@@ -4,7 +4,7 @@ load_dotenv()
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from app.models import Base
 
 def get_db_engine():
     """Creates the SQLAlchemy engine only when called."""
