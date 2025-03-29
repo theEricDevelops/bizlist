@@ -1,3 +1,5 @@
+# /app/models/source.py
+
 from sqlalchemy import Column, String, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -9,5 +11,6 @@ class Source(Base):
     name = Column(String(255), unique=True, nullable=False)
     url = Column(String(255), unique=True, nullable=True)
     notes = Column(String)
-    businesses = relationship("Business", secondary="business_sources", back_populates="sources")
-    contacts = relationship("Contact", secondary="source_contacts", back_populates="sources")
+
+    businesses = relationship("BusinessSource", back_populates="source")
+    contacts = relationship("SourceContact", back_populates="source")

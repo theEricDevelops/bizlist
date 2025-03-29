@@ -10,7 +10,7 @@ from app.services.logger import Logger
 from app.services.exporter import Exporter
 
 from app.models.contact import Business
-from app.schemas.contact import BusinessSchema
+from app.schemas.contact import BusinessSchema, BusinessSchemaRef
 
 log = Logger('router-business')
 
@@ -30,12 +30,24 @@ def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
         log.error(f"Error creating business: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@business_router.get("", response_model=List[BusinessSchema])
+@business_router.get("", response_model=List[BusinessSchemaRef])
 def read_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Read all businesses."""
     try:
         businesses = db.query(Business).offset(skip).limit(limit).all()
-        return businesses
+
+        data = []
+        for business in businesses:
+            business_dict = business.__dict__.copy()
+            for key in business_dict:
+                if business_dict[key] == '':
+                    business_dict[key] = None
+            if business_dict['notes'] is not List:
+                print(f"Business {business.id} notes is not a list, converting to list")
+                business_dict['notes'] = [business_dict['notes']]
+            data.append(business_dict)
+
+        return [BusinessSchemaRef.model_validate(business) for business in data]
     except SQLAlchemyError as e:
         log.error(f"Error reading businesses: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")

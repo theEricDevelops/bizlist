@@ -1,9 +1,10 @@
 from pydantic import BaseModel, Field
+from pydantic.networks import EmailStr, HttpUrl
 from typing import Optional, List
 import uuid
 
-class BusinessSchema(BaseModel):
-    id: Optional[uuid.UUID] = Field(default=None)
+
+class BusinessSchemaBase(BaseModel):
     name: str
     industry: Optional[str] = None
     address: Optional[str] = None
@@ -13,14 +14,14 @@ class BusinessSchema(BaseModel):
     zip: Optional[str] = None
     phone: Optional[str] = None
     website: Optional[str] = None
-    email: Optional[str] = None
-    notes: Optional[str] = None
-    sources: List["SourceSchema"] = []
+    email: Optional[EmailStr] = None
+    notes: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
+        max_recursion = 1
 
-class ContactSchema(BaseModel):
+class ContactSchemaBase(BaseModel):
     id: Optional[uuid.UUID] = Field(default=None)
     first_name: str
     last_name: str
@@ -28,11 +29,39 @@ class ContactSchema(BaseModel):
     phone: Optional[str] = None
     title: Optional[str] = None
     notes: Optional[str] = None
-    businesses: List["BusinessSchema"] = []
-    sources: List["SourceSchema"] = []
 
     class Config:
         from_attributes = True
+        max_recursion = 1
+
+class BusinessSchemaCreate(BusinessSchemaBase):
+    id: Optional[uuid.UUID] = Field(default=uuid.uuid4())
+
+    class Config:
+        from_attributes = True
+        max_recursion = 1
+
+class BusinessSchemaRef(BusinessSchemaBase):
+    pass
+
+class ContactSchemaRef(ContactSchemaBase):
+    pass
+
+class BusinessSchema(BusinessSchemaBase):
+    contacts: List[ContactSchemaRef] = []
+    sources: List["SourceSchemaRef"] = []
+
+    class Config:
+        from_attributes = True
+        max_recursion = 1
+
+class ContactSchema(ContactSchemaBase):
+    businesses: List[BusinessSchemaRef] = []
+    sources: List["SourceSchemaRef"] = []
+
+    class Config:
+        from_attributes = True
+        max_recursion = 1
 
 class BusinessContactSchema(BaseModel):
     id: Optional[uuid.UUID] = Field(default=uuid.uuid4())
@@ -41,3 +70,5 @@ class BusinessContactSchema(BaseModel):
 
     class Config:
         from_attributes = True
+        max_recursion = 1
+

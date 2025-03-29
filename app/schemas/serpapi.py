@@ -48,7 +48,6 @@ class SerpAPILocalAdsQuery(BaseModel):
     no_cache: Optional[bool] = False
     async_search: Optional[bool] = True
     zero_trace: Optional[bool] = False
-    api_key: str
     output: Literal['JSON', 'html'] = 'JSON'
 
 class SerpAPILocalAdsResult(BaseModel):

@@ -1,3 +1,5 @@
+# /app/models/contact.py
+
 from sqlalchemy import Column, String, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
@@ -16,9 +18,10 @@ class Business(Base):
     phone = Column(String(20))
     website = Column(String(255))
     email = Column(String(255))
-    notes = Column(String)
-    sources = relationship("Source", secondary="business_sources", back_populates="businesses")
-    contacts = relationship("Contact", secondary="business_contacts", back_populates="businesses")
+    notes = Column(String[String])
+
+    sources = relationship("BusinessSource", back_populates="business")
+    contacts = relationship("BusinessContact", back_populates="business")
 
 class Contact(Base):
     __tablename__ = "contacts"
@@ -29,5 +32,6 @@ class Contact(Base):
     phone = Column(String(20))
     title = Column(String(255))
     notes = Column(String)
-    businesses = relationship("Business", secondary="business_contacts", back_populates="contacts")
-    sources = relationship("Source", secondary="source_contacts", back_populates="contacts")
+
+    businesses = relationship("BusinessContact", back_populates="contact")
+    sources = relationship("SourceContact", back_populates="contact")

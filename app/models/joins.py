@@ -1,3 +1,5 @@
+# /app/models/joins.py
+
 from sqlalchemy import Column, ForeignKey, Table
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -10,6 +12,7 @@ class BusinessSource(Base):
     source_id = Column(UUID(as_uuid=True), ForeignKey("sources.id"), nullable=False)
 
     business = relationship("Business", back_populates="sources")
+    source = relationship("Source", back_populates="businesses")
     
 class SourceContact(Base):
     __tablename__ = "source_contacts"
@@ -18,6 +21,7 @@ class SourceContact(Base):
     contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"), nullable=False)
 
     source = relationship("Source", back_populates="contacts")
+    contact = relationship("Contact", back_populates="sources")
 
 class BusinessContact(Base):
     __tablename__ = "business_contacts"
@@ -26,5 +30,6 @@ class BusinessContact(Base):
     contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"), nullable=False)
 
     business = relationship("Business", back_populates="contacts")
+    contact = relationship("Contact", back_populates="businesses")
 
 
