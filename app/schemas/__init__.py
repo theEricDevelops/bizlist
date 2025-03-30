@@ -10,6 +10,10 @@ ContactSchemaBase.model_rebuild()
 ContactSchemaRef.model_rebuild()
 BusinessSchema.model_rebuild()
 ContactSchema.model_rebuild()
+SourceSchema.model_rebuild()
+SourceSchemaRef.model_rebuild()
+SourceData.model_rebuild()
+
 
 __all__ = [
     "ContactSchema",

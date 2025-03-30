@@ -3,9 +3,11 @@ from app.services.logger import Logger
 from app.core.config import config
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 
 from app.routers.business import business_router
 from app.routers.serpapi import serpapi_router
+from app.routers.owens import owenscorning
 
 log = Logger('app-main')
 
@@ -19,6 +21,7 @@ def root():
 
 app.include_router(business_router, prefix="/businesses", tags=["businesses"])
 app.include_router(serpapi_router, prefix="/serpapi", tags=["serpapi"])
+app.include_router(owenscorning, prefix="/scrape/owenscorning", tags=["scraper", "owenscorning"])
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
 async def catch_all(request: Request, path: str):

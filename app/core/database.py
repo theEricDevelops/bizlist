@@ -22,3 +22,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_db_conn():
+    """Get a database connection."""
+    db = next(get_db())
+    try:
+        yield db
+    finally:
+        db.close()

@@ -1,4 +1,4 @@
-import os, csv, re
+import re
 import requests
 from typing import List
 from selenium import webdriver
@@ -7,16 +7,18 @@ from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from app.services.logger import Logger
 from urllib.parse import urlparse
-from app.models.location import CoverageZipList
+from app.models.location import CoverageZipList, ZipCode
+from app.schemas.location import ZipCodeSchema
+from app.core.database import get_db_conn
 
-log = Logger('service-scraping', log_level='INFO')
+log = Logger('service-scraping', log_level='DEBUG')
 html_log = Logger('service-scraping-html')
 
 class ScrapingService:
     def __init__(self):
         pass
 
-    def setup_driver(sandbox: bool = False, headless: bool = False) -> webdriver.Chrome:
+    def setup_driver(sandbox: bool = False, headless: bool = False, **kwargs) -> webdriver.Chrome:
         options = webdriver.ChromeOptions()
         if headless:
             options.add_argument("--headless")
@@ -28,6 +30,73 @@ class ScrapingService:
         service = ChromeService(executable_path=chromedriver_path)
         driver = webdriver.Chrome(service=service, options=options)
         return driver
+    
+    def set_location(self, location: dict | str | int, db: Session) -> ZipCodeSchema:
+        """Set the location for the scraper based on the provided input."""
+        
+        # Convert location into a dictionary if it's a string or integer
+        if isinstance(location, str):
+            if re.match(r'^\d{5}$', location):
+                log.debug(f"Assuming location is a zip code: {location}")
+                # Assuming it's a zip code
+                location = {"zipCode": location}
+            else:
+                log.debug(f"Assuming location is a city/state: {location}")
+                # Assuming it's a city/state
+                parts = location.split(',')
+                if len(parts) == 2:
+                    city, state = map(str.strip, parts)
+                    log.debug(f"Parsed city: {city}, state: {state}")
+                    location = {"city": city, "state": state}
+                else:
+                    raise ValueError("Invalid location format. Expected 'city, state' or 'zipCode'.")
+        
+        if isinstance(location, int) and len(str(location)) == 5:
+            log.debug(f"Assuming location is a zip code: {location}")
+            # Assuming it's a zip code
+            location = {"zipCode": str(location)}
+
+        return self.get_zip_data(location, db)
+
+    def get_zip_data(self, location: dict, db: Session) -> ZipCode:
+        """Retrieve zip code data from the database."""
+        try:
+            log.info(f"Retrieving zip code data for location: {location}")
+            db = next(get_db_conn())
+            # Set geolocation if zip code is provided
+            if "zipCode" in location:
+                zip_data = db.query(ZipCode).filter_by(zip=location["zipCode"]).first()
+                log.debug(f"Zip code data found: {zip_data}")
+            elif "city" in location and "state" in location:
+                zip_data = db.query(ZipCode).filter_by(city=location["city"], state=location["state"]).first()
+                log.debug(f"Zip code data found: {zip_data}")
+            else:
+                log.warning("No zip code or city/state combo provided, not setting geolocation.")
+                return None
+            
+            return zip_data
+            
+        except Exception as e:
+            log.error(f"Error retrieving zip code data from database: {e}")
+            return None
+
+    def set_geolocation(self, driver: webdriver.Chrome, location: dict, db: Session) -> None:
+        """Set the geolocation for the driver based on the provided location."""
+        log.info(f"Setting geolocation for driver with location: {location}")
+
+        zip_data: ZipCode = self.get_zip_data(location=location, db=db)
+
+        if zip_data:
+            lat = zip_data.latitude
+            lon = zip_data.longitude
+            driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
+                "latitude": lat,
+                "longitude": lon,
+                "accuracy": 100
+            })
+            log.info(f"Set geolocation to lat: {lat}, lon: {lon} for zip code: {location['zipCode']}")
+        else:
+            log.warning(f"Zip code {location['zipCode']} not found in zip data.")
     
     def build_base_url(location: dict, radius: int) -> str:
         log.info(f"Building base URL for GAF with location: {location} and radius: {radius}")
@@ -54,31 +123,6 @@ class ScrapingService:
         except Exception as e:
             log.error(f"Error extracting top-level URL: {e}")
             return None
-    
-    def load_zip_code_data():
-        """Loads zip code data from CSV into a dictionary mapping zip codes to (latitude, longitude)."""
-        project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        csv_path = os.path.join(project_dir, "data", "USZipsWithLatLon_20231227.csv")
-        
-        try:
-            with open(csv_path, 'r') as f:
-                reader = csv.DictReader(f)
-                zip_data = {}
-                for row in reader:
-                    zip_code = row['postal code']
-                    lat = float(row['latitude'])
-                    lon = float(row['longitude'])
-                    zip_data[zip_code] = (lat, lon)
-                return zip_data
-        except FileNotFoundError:
-            log.error(f"CSV file not found: {csv_path}")
-            return {}
-        except KeyError as e:
-            log.error(f"Missing column in CSV: {e}")
-            return {}
-        except ValueError as e:
-            log.error(f"Error parsing CSV: {e}")
-            return {}
 
     def zips_by_state(db: Session, states: List[str]) -> List[str]:
         zip_codes = []

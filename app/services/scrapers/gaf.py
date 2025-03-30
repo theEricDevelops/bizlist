@@ -14,8 +14,8 @@ from app.services.source import add_or_find_source
 from app.services.scraping import ScrapingService
 from app.schemas.source import SourceData, SourceSchema
 
-log = Logger('source-gaf', log_level='INFO')
-html_log = Logger('source-gaf-html')
+log = Logger('scraper-gaf', log_level='INFO')
+html_log = Logger('scraper-gaf-html')
 
 class GAFScraper:
     """
@@ -188,24 +188,7 @@ class GAFScraper:
         all_contacts = []
         driver = self.scraper.setup_driver()
         
-        # Load zip code data
-        zip_data = self.scraper.load_zip_code_data()
-        
-        # Set geolocation if zip code is provided
-        if "zipCode" in location:
-            zip_code = location["zipCode"]
-            if zip_code in zip_data:
-                lat, lon = zip_data[zip_code]
-                driver.execute_cdp_cmd("Emulation.setGeolocationOverride", {
-                    "latitude": lat,
-                    "longitude": lon,
-                    "accuracy": 100
-                })
-                log.info(f"Set geolocation to lat: {lat}, lon: {lon} for zip code: {zip_code}")
-            else:
-                log.warning(f"Zip code {zip_code} not found in zip data.")
-        else:
-            log.info("No zip code provided, not setting geolocation.")
+        self.scraper.set_geolocation(driver, location)
         
         base_url = self.scraper.build_base_url(location, radius)
 

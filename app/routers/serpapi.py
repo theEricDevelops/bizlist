@@ -1,5 +1,4 @@
-from fastapi import APIRouter
-from fastapi import Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 import requests
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -20,8 +19,7 @@ log = Logger('router-serpapi')
 
 serpapi_router = APIRouter()
 
-
-@serpapi_router.get("/local-ads/", response_model=SerpAPILocalAdsResult)
+@serpapi_router.get("/local-ads/{q}", response_model=SerpAPILocalAdsResult)
 def get_serpapi(query: SerpAPILocalAdsQuery, db: Session = Depends(get_db)):
     """Get Local Ads Results from SerpAPI."""
     try:

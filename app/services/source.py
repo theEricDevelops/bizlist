@@ -6,7 +6,7 @@ from app.services.logger import Logger
 
 log = Logger('service-source')
 
-def add_or_find_source(db: Session, source: SourceSchema) -> uuid.UUID:
+def add_or_find_source(source: SourceSchema, db: Session) -> uuid.UUID:
     source_name = source.name
     source_url = source.url
     existing_source = db.query(Source).filter(Source.name == source_name).first()
