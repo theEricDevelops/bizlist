@@ -8,7 +8,31 @@ class Formatter:
     def __init__(self):
         self.log = log
 
-    def phone(number: str) -> str:
+    def name(self, name: str) -> str:
+        """Format a company name by removing extra space and capitalizing each word
+        while treating 'and' and 'the' as lowercase and keeping acronyms capitalized."""
+        log.debug(f"Formatting name: {name}")
+        if not name:
+            log.debug(f"No name found")
+            return None
+        name = re.sub(r'\s+', ' ', name.strip())
+        name = re.sub(r'(?<!\w)(and|the)(?!\w)', lambda m: m.group(0).lower(), name, flags=re.IGNORECASE)
+        name = re.sub(r'\b[A-Z]{2,}\b', lambda m: m.group(0).upper(), name)
+        # Remove LLC, Inc., Corp., etc. from the end of the name
+        name = re.sub(r'\s+(LLC|Inc\.|Corp\.|Ltd\.|Pty\.|GmbH|S\.A\.R\.L)\b', '', name, flags=re.IGNORECASE)
+        # Remove any trailing commas or periods
+        name = re.sub(r'[,.]+$', '', name)
+        # Remove any leading or trailing whitespace
+        name = name.strip()
+        # Capitalize each word
+        name = re.sub(r'\s+', ' ', name)  # Normalize spaces
+        
+        formatted_name = ' '.join(word.capitalize() for word in name.split())
+        log.debug(f"Formatted name: {formatted_name}")
+        return formatted_name
+
+    def phone(self, number: str) -> str:
+        """Format a phone number by removing non-numeric characters and returning the last 10 digits."""
         number = number.replace(" ", "").replace("-", "").replace("(", "").replace(")", "").replace(".", "").replace("+", "")
         number = number.split("tel:")[-1] if number.startswith("tel:") else number
         if len(number) == 10:
@@ -21,7 +45,8 @@ class Formatter:
             log.warning(f"Invalid phone number: {number}")
             return None
 
-    def zip(zip_code: str) -> str:
+    def zip(self, zip_code: str) -> str:
+        """Format a ZIP code by removing non-numeric characters and returning the last 5 or 9 digits."""
         zip_code = zip_code.replace("-", "").replace(" ", "")
         if (len(zip_code) == 5 or len(zip_code) == 9) and zip_code.isdigit():
             log.debug(f"Returning ZIP code: {zip_code}")
@@ -30,7 +55,8 @@ class Formatter:
             log.warning(f"Invalid ZIP code: {zip_code}")
             return None
 
-    def website(website: str) -> str:
+    def website(self, website: str) -> str:
+        """Format a website URL by ensuring it starts with 'http://' or 'https://'."""
         if not website:
             log.debug(f"No website found")
             return None
@@ -49,7 +75,8 @@ class Formatter:
             log.warning(f"Invalid website: {website}")
             return None
 
-    def email(email: str) -> str:
+    def email(self, email: str) -> str:
+        """Format an email address by ensuring it follows a standard format."""
         if not email:
             log.debug(f"No email found")
             return None
@@ -63,7 +90,8 @@ class Formatter:
             log.warning(f"Invalid email: {email}")
             return None
     
-    def address_parts(address_str: str) -> Tuple[str, str, str, str, str]:
+    def address_parts(self, address_str: str) -> Tuple[str, str, str, str, str]:
+        """Parse an address string into its components: address1, address2, city, state, and zip code."""
         log.debug(f"Parsing address: {address_str}")
         address_str = re.sub(r'\s+', ' ', address_str.strip())
         address_str = re.sub(r',+', ',', address_str)

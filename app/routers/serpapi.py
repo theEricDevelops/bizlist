@@ -12,7 +12,6 @@ from app.services.exporter import Exporter
 from app.services.api_clients.serpapi import SerpAPI
 from app.core.database import get_db
 
-from app.models.contact import Business
 from app.schemas.serpapi import SerpAPILocalAdsResult, SerpAPILocalAdsQuery
 
 log = Logger('router-serpapi')

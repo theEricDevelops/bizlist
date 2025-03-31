@@ -1,3 +1,5 @@
+from urllib.parse import unquote_plus
+
 from fastapi import APIRouter
 from fastapi import Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
@@ -12,7 +14,7 @@ from app.services.exporter import Exporter
 from app.models.contact import Business
 from app.schemas.contact import BusinessSchema, BusinessSchemaRef
 
-log = Logger('router-business')
+log = Logger('router-business', log_level='DEBUG')
 
 business_router = APIRouter()
 
@@ -52,15 +54,35 @@ def read_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_d
         log.error(f"Error reading businesses: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     
-@business_router.get("/businesses/export", response_model=List[BusinessSchema])
+@business_router.get("/export", response_model=str)
 def read_businesses_export(db: Session = Depends(get_db)):
     """Read all businesses for export."""
     export = Exporter()
     try:
         businesses = db.query(Business).all()
+        log.info(f"Exporting {len(businesses)} businesses to CSV")
         response = export.to_csv(businesses)
         return response
     except SQLAlchemyError as e:
+        log.error(f"Error reading businesses for export: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+@business_router.get("/export/{name}", response_model=str)
+def export_business_by_name(name: str, db: Session = Depends(get_db)):
+    """Export a business by name into CSV."""
+    export = Exporter()
+    try:
+        name = unquote_plus(name)
+        log.info(f"Exporting business with name: {name}")
+        businesses = db.query(Business).filter(Business.name.ilike(f"%{name}%")).all()
+        log.info(f"Found {len(businesses)} businesses matching '{name}', exporting to CSV")
+        
+        if not businesses:
+            raise HTTPException(status_code=404, detail=f"No businesses found matching '{name}'")
+            
+        response = export.to_csv(businesses)
+        return response
+    except SQLAlchemyError as e: 
         log.error(f"Error reading businesses for export: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
