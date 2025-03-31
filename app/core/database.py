@@ -4,7 +4,7 @@ load_dotenv()
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from models import Base
+from app.models import Base
 
 def get_db_engine():
     """Creates the SQLAlchemy engine only when called."""
@@ -18,6 +18,14 @@ def get_db():
     engine = get_db_engine()
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+def get_db_conn():
+    """Get a database connection."""
+    db = next(get_db())
     try:
         yield db
     finally:

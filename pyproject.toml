@@ -1,0 +1,2 @@
+[tool.fastapi]
+port = 8889

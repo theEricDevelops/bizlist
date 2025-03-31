@@ -13,8 +13,8 @@ This file outlines the tasks required to build the backend API for the BizList p
   - [X] Design the basic structure of API endpoints (URLs, HTTP methods).
 - [ ] **Error Handling:**
   - [ ] Implement a robust error handling mechanism (HTTP status codes, custom error responses).
-- [ ] **Logging:**
-  - [ ] Set up logging to track API requests, responses, and errors.
+- [X] **Logging:**
+  - [X] Set up logging to track API requests, responses, and errors.
 - [X] **Configuration:**
   - [X] Implement configuration management (environment variables, config files).  Consider using a library like `python-dotenv` (Python) or similar.
 - [ ] **Testing Framework:**
@@ -32,9 +32,9 @@ This file outlines the tasks required to build the backend API for the BizList p
   - [ ] Implement data extraction logic for each data source, handling inconsistencies and errors.
   - [ ] Normalize extracted data into a consistent format.
   - [ ] Implement data cleaning (e.g., removing duplicates, handling missing data).
-- [ ] **Data Storage:**
-  - [ ] Choose a database (e.g., PostgreSQL, MongoDB).
-  - [ ] Design the database schema for storing contacts (consider indexing for efficient searching).
+- [X] **Data Storage:**
+  - [X] Choose a database (e.g., PostgreSQL, MongoDB).
+  - [X] Design the database schema for storing contacts (consider indexing for efficient searching).
 - [ ] **Search Endpoint Implementation:**
   - [ ] Implement the main search endpoint (POST request with JSON payload).
   - [ ] Define request parameters (keywords, industry, job title, location, company size, etc.).

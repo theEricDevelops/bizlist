@@ -1,4 +1,4 @@
-from database import get_db
+from app.core.database import get_db
 
 def get_db_conn():
     """Get a database connection."""
