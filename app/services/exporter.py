@@ -17,11 +17,22 @@ class Exporter:
     def __init__ (self):
         pass
 
-    def to_csv(self, data: List[Business], filename: str = None) -> str:
+    def to_csv(self, data: List[Business], fieldnames: List[str], filename: str = None) -> str:
         """Exports data to a CSV file."""
         log.info(f"Exporting data to CSV: {filename}")
         if not filename:
             filename = f"export_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        
+        # Verify the filename passed by the user is safe
+        if not filename.isalnum() and not filename.replace('_', '').isalnum():
+            log.error("Invalid filename provided. Only alphanumeric characters and underscores are allowed.")
+        
+        # Make the filename url safe
+        filename = filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
+
+        if not filename.endswith('.csv'):
+            filename += '.csv'
+            
         filepath = os.path.join(config.download_dir, filename)
         log.debug(f"Exporting data to CSV: {filepath}")
 
@@ -74,19 +85,6 @@ class Exporter:
                         row_dict['industry'] = formatter.name(str(row_dict['industry']))
                     
                     rows.append(row_dict)
-                
-                fieldnames = [
-                    'name',
-                    'address',
-                    'address2',
-                    'city',
-                    'state',
-                    'zip',
-                    'phone',
-                    'email',
-                    'website',
-                    'industry'
-                ]
                 
                 writer = csv.DictWriter(file, fieldnames=fieldnames)
                 writer.writeheader()

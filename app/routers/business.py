@@ -32,7 +32,7 @@ def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
         log.error(f"Error creating business: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@business_router.get("", response_model=List[BusinessSchemaRef])
+@business_router.get("/", response_model=List[BusinessSchemaRef])
 def read_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Read all businesses."""
     try:
@@ -67,20 +67,73 @@ def read_businesses_export(db: Session = Depends(get_db)):
         log.error(f"Error reading businesses for export: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     
-@business_router.get("/export/{name}", response_model=str)
-def export_business_by_name(name: str, db: Session = Depends(get_db)):
-    """Export a business by name into CSV."""
+@business_router.get("/export/{params}", response_model=str)
+def export_businesses(params: str, db: Session = Depends(get_db)):
+    """Export a business by name into CSV with optional filters."""
     export = Exporter()
     try:
-        name = unquote_plus(name)
-        log.info(f"Exporting business with name: {name}")
-        businesses = db.query(Business).filter(Business.name.ilike(f"%{name}%")).all()
-        log.info(f"Found {len(businesses)} businesses matching '{name}', exporting to CSV")
+        log.info(f"Export request with path parameter: {params}")
+        
+        # Check if the name contains query parameters
+        query_params = {}
+        filename = None
+        fieldnames = None
+        original_params = params  # Store original params before splitting
+        
+        if '=' in params:
+            # Parse query parameters from name
+            param_items = params.split('&')
+            for param in param_items:
+                if '=' in param:
+                    key, value = param.split('=', 1)
+                    value = unquote_plus(value)
+                    if key == 'filename':
+                        filename = value
+                    elif key == 'fields':
+                        # Decode the value and split by comma
+                        fieldnames = unquote_plus(value).split(',')
+                    else:
+                        # Decode the value and add it to query_params
+                        value = unquote_plus(value)
+                        query_params[key] = value
+            
+        # Build dynamic query
+        query = db.query(Business)
+        
+        # Apply name filter if it exists
+        if original_params and not '=' in original_params:
+            decoded_params = unquote_plus(original_params)  # Decode the search term
+            query = query.filter(Business.name.ilike(f"%{decoded_params}%"))
+            
+        # Apply additional filters from query parameters
+        for key, value in query_params.items():
+            if hasattr(Business, key):
+                query = query.filter(getattr(Business, key).ilike(f"%{value}%"))
+        
+        businesses = query.all()
+        log.info(f"Found {len(businesses)} businesses matching criteria")
         
         if not businesses:
-            raise HTTPException(status_code=404, detail=f"No businesses found matching '{name}'")
-            
-        response = export.to_csv(businesses)
+            log.error(f"404 - No businesses found matching criteria")
+            raise HTTPException(status_code=404, detail=f"No businesses found matching criteria: {params}")
+        
+        if not fieldnames:
+            # Default fieldnames if not provided
+            fieldnames = [
+                'name',
+                'address',
+                'address2',
+                'city',
+                'state',
+                'zip',
+                'phone',
+                'email',
+                'website',
+                'industry'
+            ]
+
+        response = export.to_csv(businesses, fieldnames, filename)
+        log.info(f"Exported {len(businesses)} businesses to CSV")
         return response
     except SQLAlchemyError as e: 
         log.error(f"Error reading businesses for export: {e}")
