@@ -31,14 +31,77 @@ def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
         db.rollback()
         log.error(f"Error creating business: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
+    
 @business_router.get("/", response_model=List[BusinessSchemaRef])
-def read_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def read_all_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     """Read all businesses."""
+    log.info(f"Read all businesses with skip: {skip}, limit: {limit}")
     try:
         businesses = db.query(Business).offset(skip).limit(limit).all()
+        log.info(f"Found {len(businesses)} businesses")
+        
+        data = []
+        # Convert SQLAlchemy objects to dictionaries and handle empty strings
+        for business in businesses:
+            business_dict = business.__dict__.copy()
+            for key in business_dict:
+                if business_dict[key] == '':
+                    business_dict[key] = None
+            if business_dict['notes'] is not List:
+                print(f"Business {business.id} notes is not a list, converting to list")
+                business_dict['notes'] = [business_dict['notes']]
+            data.append(business_dict)
+
+        return [BusinessSchemaRef.model_validate(business) for business in businesses]
+    except SQLAlchemyError as e:
+        log.error(f"Error reading all businesses: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+
+@business_router.get("/{params}", response_model=List[BusinessSchemaRef])
+def read_businesses(params: str = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    """Read all businesses."""
+    log.info(f"Read businesses with params: {params}, skip: {skip}, limit: {limit}")
+    try:
+        if params is not None:
+
+            # Check if the name contains query parameters
+            query_params = {}
+            original_params = params  # Store original params before splitting
+            
+            if '=' in params:
+                # Parse query parameters from name
+                param_items = params.split('&')
+                for param in param_items:
+                    if '=' in param:
+                        key, value = param.split('=', 1)
+                        value = unquote_plus(value)
+                        query_params[key] = value
+                
+            # Build dynamic query
+            query = db.query(Business)
+            
+            # Apply name filter if it exists
+            if original_params and not '=' in original_params:
+                decoded_params = unquote_plus(original_params)  # Decode the search term
+                query = query.filter(Business.name.ilike(f"%{decoded_params}%"))
+                
+            # Apply additional filters from query parameters
+            for key, value in query_params.items():
+                if hasattr(Business, key):
+                    query = query.filter(getattr(Business, key).ilike(f"%{value}%"))
+            
+            businesses = query.all()
+            log.info(f"Found {len(businesses)} businesses matching criteria")
+        else:
+            businesses = db.query(Business).offset(skip).limit(limit).all()
+            log.info(f"Found {len(businesses)} businesses with no filters")
+        
+        if not businesses:
+            log.error(f"404 - No businesses found matching criteria")
+            raise HTTPException(status_code=404, detail=f"No businesses found matching criteria: {params}")
 
         data = []
+        # Convert SQLAlchemy objects to dictionaries and handle empty strings
         for business in businesses:
             business_dict = business.__dict__.copy()
             for key in business_dict:

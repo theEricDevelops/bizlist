@@ -1,6 +1,7 @@
 import csv
 import os
-import time
+import re
+from datetime import datetime
 from typing import List
 from app.core.config import config
 from app.services.logger import Logger
@@ -20,19 +21,24 @@ class Exporter:
     def to_csv(self, data: List[Business], fieldnames: List[str], filename: str = None) -> str:
         """Exports data to a CSV file."""
         log.info(f"Exporting data to CSV: {filename}")
-        if not filename:
-            filename = f"export_{time.strftime('%Y%m%d_%H%M%S')}.csv"
-        
-        # Verify the filename passed by the user is safe
-        if not filename.isalnum() and not filename.replace('_', '').isalnum():
-            log.error("Invalid filename provided. Only alphanumeric characters and underscores are allowed.")
-        
-        # Make the filename url safe
-        filename = filename.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        if filename:
+            # Verify the filename passed by the user is safe
+            if not filename.isalnum() and not filename.replace('_', '').isalnum():
+                log.error("Invalid filename provided. Only alphanumeric characters and underscores are allowed.")
 
-        if not filename.endswith('.csv'):
-            filename += '.csv'
-            
+            # If the filename has an extension, remove it
+            match = re.match(r'^(.*?)(\.[^.]*$|$)', filename)
+            if match:
+                filename = match.group(1)
+        else:
+            # Generate a default filename if none is provided
+            filename = "export"
+
+        # Append a timestamp to the filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        filename = f"{filename}_{timestamp}.csv"
+                    
         filepath = os.path.join(config.download_dir, filename)
         log.debug(f"Exporting data to CSV: {filepath}")
 
