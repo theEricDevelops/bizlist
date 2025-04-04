@@ -26,6 +26,9 @@ class Exporter:
             if not filename.isalnum() and not filename.replace('_', '').isalnum():
                 log.error("Invalid filename provided. Only alphanumeric characters and underscores are allowed.")
 
+            filename = filename.strip().replace(' ', '_').replace('/', '_').replace('\\', '_')
+            filename = re.sub(r'[^a-zA-Z0-9_.-]', '_', filename)
+
             # If the filename has an extension, remove it
             match = re.match(r'^(.*?)(\.[^.]*$|$)', filename)
             if match:
@@ -100,4 +103,4 @@ class Exporter:
         except Exception as e:
             log.error(f"An unexpected error occurred while exporting data to CSV: {e}")
             return None
-        return filename
+        return { "filename": filename, "path": filepath }

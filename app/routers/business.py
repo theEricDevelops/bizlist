@@ -1,6 +1,7 @@
 from urllib.parse import unquote_plus
 
 from fastapi import APIRouter
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi import Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -31,14 +32,23 @@ def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
         db.rollback()
         log.error(f"Error creating business: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
-    
+
+@business_router.get("")
+def forward_to_read_all_businesses():
+    """Redirect to read_all_businesses."""
+    return RedirectResponse(url="/businesses/")
+
 @business_router.get("/", response_model=List[BusinessSchemaRef])
 def read_all_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Read all businesses."""
-    log.info(f"Read all businesses with skip: {skip}, limit: {limit}")
+    """Read ALl Businesses."""
+    log.info("Read all businesses, skip: {skip}, limit: {limit}")
     try:
         businesses = db.query(Business).offset(skip).limit(limit).all()
-        log.info(f"Found {len(businesses)} businesses")
+        log.info(f"Found {len(businesses)} businesses with no filters")
+
+        if not businesses:
+            log.warning("No businesses found")
+            return []
         
         data = []
         # Convert SQLAlchemy objects to dictionaries and handle empty strings
@@ -51,15 +61,15 @@ def read_all_businesses(skip: int = 0, limit: int = 100, db: Session = Depends(g
                 print(f"Business {business.id} notes is not a list, converting to list")
                 business_dict['notes'] = [business_dict['notes']]
             data.append(business_dict)
-
-        return [BusinessSchemaRef.model_validate(business) for business in businesses]
+        
+        return [BusinessSchemaRef.model_validate(business) for business in data]
     except SQLAlchemyError as e:
-        log.error(f"Error reading all businesses: {e}")
+        log.error(f"Error reading businesses: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
 
-@business_router.get("/{params}", response_model=List[BusinessSchemaRef])
+@business_router.get("/search/{params}", response_model=List[BusinessSchemaRef])
 def read_businesses(params: str = None, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    """Read all businesses."""
+    """Read all businesses which match the parameters passed."""
     log.info(f"Read businesses with params: {params}, skip: {skip}, limit: {limit}")
     try:
         if params is not None:
@@ -117,7 +127,7 @@ def read_businesses(params: str = None, skip: int = 0, limit: int = 100, db: Ses
         log.error(f"Error reading businesses: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
     
-@business_router.get("/export", response_model=str)
+@business_router.get("/export")
 def read_businesses_export(db: Session = Depends(get_db)):
     """Read all businesses for export."""
     export = Exporter()
@@ -125,12 +135,21 @@ def read_businesses_export(db: Session = Depends(get_db)):
         businesses = db.query(Business).all()
         log.info(f"Exporting {len(businesses)} businesses to CSV")
         response = export.to_csv(businesses)
-        return response
+        return FileResponse(path=response['path'], media_type='text/csv', filename=response['filename'])
+    except FileNotFoundError as e:
+        log.error(f"File not found: {e}")
+        raise HTTPException(status_code=404, detail=f"File not found: {e}")
+    except PermissionError as e:
+        log.error(f"Permission error: {e}")
+        raise HTTPException(status_code=403, detail=f"Permission error: {e}")
     except SQLAlchemyError as e:
         log.error(f"Error reading businesses for export: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    except Exception as e:
+        log.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
     
-@business_router.get("/export/{params}", response_model=str)
+@business_router.get("/export/{params}")
 def export_businesses(params: str, db: Session = Depends(get_db)):
     """Export a business by name into CSV with optional filters."""
     export = Exporter()
@@ -197,10 +216,31 @@ def export_businesses(params: str, db: Session = Depends(get_db)):
 
         response = export.to_csv(businesses, fieldnames, filename)
         log.info(f"Exported {len(businesses)} businesses to CSV")
-        return response
+        return FileResponse(path=response['path'], media_type='text/csv', filename=response['filename'])
+    except FileNotFoundError as e:
+        log.error(f"File not found: {e}")
+        raise HTTPException(status_code=404, detail=f"File not found: {e}")
+    except PermissionError as e:
+        log.error(f"Permission error: {e}")
+        raise HTTPException(status_code=403, detail=f"Permission error: {e}")
+    except ValueError as e:
+        log.error(f"Value error: {e}")
+        raise HTTPException(status_code=400, detail=f"Value error: {e}")
+    except TypeError as e:
+        log.error(f"Type error: {e}")
+        raise HTTPException(status_code=400, detail=f"Type error: {e}")
+    except KeyError as e:
+        log.error(f"Key error: {e}")
+        raise HTTPException(status_code=400, detail=f"Key error: {e}")
+    except AttributeError as e:
+        log.error(f"Attribute error: {e}")
+        raise HTTPException(status_code=400, detail=f"Attribute error: {e}")
     except SQLAlchemyError as e: 
         log.error(f"Error reading businesses for export: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    except Exception as e:
+        log.error(f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
 
 @business_router.get("/business/{business_id}", response_model=BusinessSchema)
 def read_business(business_id: int, db: Session = Depends(get_db)):
