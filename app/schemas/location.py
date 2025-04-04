@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
 import uuid
 
@@ -7,8 +7,8 @@ class CoverageZipListSchema(BaseModel):
     params: str = Field(..., description="Parameters used to generate the zip list (e.g., state, radius)")
     zips: str = Field(..., description="Comma-separated list of zip codes")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes = True,
         json_schema_extra = {
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
@@ -16,6 +16,7 @@ class CoverageZipListSchema(BaseModel):
                 "zips": "37010,37011,37012,37013"
             }
         }
+    )
 
 class ZipCodeSchema(BaseModel):
     zip: str = Field(default=None, description="The 5-digit zip code")
@@ -28,5 +29,19 @@ class ZipCodeSchema(BaseModel):
     timezone: Optional[str] = Field(default=None, description="The timezone of the zip code")
     google_cid: Optional[str] = Field(default=None, description="Google CID for the zip code")
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
+            "example": {
+                "zip": "37010",
+                "plus4": 1234,
+                "city": "Nashville",
+                "state": "TN",
+                "county": "Davidson",
+                "latitude": 36.1627,
+                "longitude": -86.7816,
+                "timezone": "Central Standard Time",
+                "google_cid": "1234567890"
+            }
+        }
+    )

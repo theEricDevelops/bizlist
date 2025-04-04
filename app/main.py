@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
+from app.routers.location import location_router
 from app.routers.business import business_router
 from app.routers.serpapi import serpapi_router
 from app.routers.owens import owenscorning
@@ -19,6 +20,7 @@ app = FastAPI(title=config.settings['APP_NAME'], debug=True)
 def root():
     return {"message": "Welcome to the BizList API!"}
 
+app.include_router(location_router, prefix="/locations", tags=["locations"])
 app.include_router(business_router, prefix="/businesses", tags=["businesses"])
 app.include_router(serpapi_router, prefix="/serpapi", tags=["serpapi"])
 app.include_router(owenscorning, prefix="/scrape/owenscorning", tags=["scraper", "owenscorning"])
