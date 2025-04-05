@@ -1,9 +1,10 @@
 # /app/models/contact.py
 
-from sqlalchemy import Column, String, ForeignKey, Table
+from sqlalchemy import Column, String, ForeignKey, Table, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import UUID
 from app.models import Base, generate_uuid
+from datetime import datetime
 
 class Business(Base):
     __tablename__ = "businesses"
@@ -19,6 +20,9 @@ class Business(Base):
     website = Column(String(255))
     email = Column(String(255))
     notes = Column(String[String])
+
+    created = Column(DateTime, default=datetime.now())
+    updated = Column(DateTime, default=datetime.now(), onupdate=datetime.now())
 
     sources = relationship("BusinessSource", back_populates="business")
     contacts = relationship("BusinessContact", back_populates="business")

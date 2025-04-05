@@ -3,6 +3,7 @@ from app.services.logger import Logger
 from app.core.config import config
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.exceptions import RequestValidationError
 
 from app.routers.location import location_router
@@ -13,7 +14,6 @@ from app.routers.owens import owenscorning
 log = Logger('app-main')
 
 # Create FastAPI app
-
 app = FastAPI(title=config.settings['APP_NAME'], debug=True)
 
 @app.get("/")

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_serializer
 from pydantic.networks import EmailStr, HttpUrl
 from typing import Optional, List
 import uuid
@@ -15,8 +15,8 @@ class BusinessSchemaBase(BaseModel):
     state: Optional[str] = None
     zip: Optional[str] = None
     phone: Optional[str] = None
-    website: Optional[HttpUrl] = None
-    email: Optional[EmailStr] = None
+    website: Optional[str] = None
+    email: Optional[str] = Field(None, description="Business email address.")
     notes: Optional[List[str]] = None
 
     model_config = ConfigDict(
@@ -75,6 +75,27 @@ class BusinessSchemaRef(BusinessSchemaBase):
 
 class ContactSchemaRef(ContactSchemaBase):
     pass
+
+class BusinessSchemaRead(BusinessSchemaBase):
+    id: uuid.UUID = Field(default=uuid.uuid4())
+    
+    @model_serializer
+    def serialize_model(self):
+        # Return a dictionary with fields in the order you want
+        return {
+            'id': str(self.id),
+            'name': self.name,
+            'address': self.address,
+            'address2': self.address2,
+            'city': self.city,
+            'state': self.state,
+            'zip': self.zip,
+            'phone': self.phone,
+            'website': self.website,
+            'email': self.email,
+            'industry': self.industry,
+            'notes': self.notes
+        }
 
 class BusinessSchema(BusinessSchemaBase):
     contacts: List[ContactSchemaRef] = []
