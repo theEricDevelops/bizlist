@@ -14,21 +14,15 @@ from app.core.database import get_db
 
 from app.services.logger import Logger
 from app.services.exporter import Exporter
+from app.services.business import BusinessService
 
 from app.models.contact import Business
 from app.schemas.core import APIResponse, BusinessResponse
-from app.schemas.contact import BusinessSchema, BusinessSchemaRef, BusinessSchemaRead
+from app.schemas.contact import BusinessSchema, BusinessSchemaRead
 
 log = Logger('router-business', log_level='DEBUG')
 
 business_router = APIRouter()
-
-class BusinessResponse(BaseModel):
-    status_code: int
-    message: Literal['Pending', 'Success', 'Error']
-    parameters: Optional[dict] = None
-    errors: Optional[dict] = None
-    data: Optional[List[BusinessSchema]] = None
 
 @business_router.post("/", response_model=BusinessSchema)
 def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
@@ -60,196 +54,25 @@ def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
         )
         raise HTTPException(status_code=500, detail=response.model_dump())
 
-@business_router.get("/list")
-def read_all_businesses(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
-    """Read ALl Businesses."""
-    log.info(f"Read all businesses, skip: {skip}, limit: {limit}")
-    query_params = {
-        "skip": skip,
-        "limit": limit
-    }
-
-    try:
-        businesses = db.query(Business).offset(skip).limit(limit).all()
-        log.info(f"Serving {len(businesses)} business results.")
-
-        if not businesses:
-            log.warning("No businesses found")
-            return []
-        
-        data = []
-        for business in businesses:
-            business_dict = business.__dict__.copy()
-            for key in business_dict:
-                if business_dict[key] == '':
-                    business_dict[key] = None
-            if business_dict['notes'] is not List:
-                business_dict['notes'] = [business_dict['notes']]
-            data.append(business_dict)
-        
-        business_models = [BusinessSchemaRead.model_validate(business) for business in data]
-
-        business_list = []
-        for model in business_models:
-            business_dict = model.model_dump()
-            # Convert any UUID objects to strings
-            for key, value in business_dict.items():
-                if isinstance(value, UUID):
-                    business_dict[key] = str(value)
-            business_list.append(business_dict)
-        
-        return JSONResponse(
-            status_code=200, 
-            content= {
-                "status": 'success',
-                "code": 200,
-                "params": query_params,
-                "data": {
-                    "total_results": len(businesses),
-                    "businesses": business_list
-                }
-            }, headers={"server": "BizList API"})
-    except SQLAlchemyError as e:
-        log.error(f"Error reading businesses: {e}")
-        raise HTTPException(status_code=500, detail=f"Database error: {e}")
-
-@business_router.get("/search", response_model=BusinessResponse)
+@business_router.get("", response_model=BusinessResponse)
 def read_businesses(request: Request, db: Session = Depends(get_db)):
     """Read all businesses which match the parameters passed."""
     query_params: Dict[str, Any] = dict(request.query_params)
-    log.debug(f"Query parameters: {query_params}")
 
-    try:
-        if query_params:
-            # Build dynamic query
-            query = db.query(Business)
-
-            limit = int(query_params.pop('limit', 10))
-            skip = int(query_params.pop('skip', 0))
-            
-            # Apply filters from query parameters
-            invalid_params = []
-            for key, value in query_params.items():
-                if hasattr(Business, key):
-                    query = query.filter(getattr(Business, key).ilike(f"%{value}%"))
-                else:
-                    invalid_params.append(key)
-            
-            if invalid_params:
-                log.warning(f"Invalid query parameters: {invalid_params}")
-                response = APIResponse(
-                    code=400,
-                    status="error",
-                    errors={"invalid_params": invalid_params},
-                    params=query_params
-                )
-                
-                return JSONResponse(status_code=400, content=response.model_dump())
-                    
-            
-            query = query.offset(skip).limit(limit)
-            businesses = query.all()
-            log.info(f"Found {len(businesses)} businesses matching criteria")
-            
-            
-        else:
-            log.debug("No query parameters provided. Displaying error message.")
-            response = APIResponse(
-                code=400,
-                status="error",
-                errors={"message": "No search parameters provided."},
-                params=query_params
-            )
-            return JSONResponse(status_code=400, content=response.model_dump())
-
-        if not businesses:
-            log.error(f"404 - No businesses found matching criteria")
-            response = APIResponse(
-                code=404,
-                status="error",
-                errors={"message": "No businesses found matching criteria."},
-                params=query_params
-            )
-            return JSONResponse(status_code=404, content=response.model_dump())
+    bus_service = BusinessService()
+    code, status, error_list, parameters, results = bus_service.get(db=db, params=query_params)
+    return JSONResponse(
+        status_code=code,
+        content={
+            "status": status,
+            "code": code,
+            "errors": error_list,
+            "params": parameters,
+            "data": results
+        }
+    )
 
         
-        log.debug(f"Business objects: {businesses}")
-        log.info(f"Returning {len(businesses)} businesses")
-
-        business_list = []
-        for business in businesses:
-            business_dict = business.__dict__.copy()
-            business_dict.pop('_sa_instance_state', None)
-
-            keys_to_process = list(business_dict.keys())
-
-            processed_dict = {}
-            for key in keys_to_process:
-                value = business_dict[key]
-                
-                if value == '' or value is None:
-                    continue
-
-                if isinstance(value, UUID):
-                    processed_dict[key] = str(value)
-                else:
-                    processed_dict[key] = value
-
-            try:
-                business_model = BusinessSchemaRead.model_validate(processed_dict)
-
-                business_data = business_model.model_dump()
-
-                for key, value in business_data.items():
-                    if isinstance(value, UUID):
-                        business_data[key] = str(value)
-
-                business_list.append(business_data)
-            except Exception as e:
-                log.error(f"Error validating business model: {e}")
-                
-                for key, value in processed_dict.items():
-                    if isinstance(value, UUID):
-                        processed_dict[key] = str(value)
-                business_list.append(processed_dict)
-        params = dict(request.query_params)
-        params.update({"limit": limit, "skip": skip})
-        return JSONResponse(
-            status_code=200,
-            content= {
-                "status": 'success',
-                "code": 200,
-                "params": params,
-                "data": {
-                    "total_results": len(businesses),
-                    "businesses": business_list
-                }
-            }
-        )
-    except SQLAlchemyError as e:
-        log.error(f"Error reading businesses: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "code": 500,
-                "errors": {"message": f"Database error: {e}"},
-                "params": query_params
-            }
-        )
-    except Exception as e:
-        log.error(f"Unexpected error: {e}")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "code": 500,
-                "errors": {"message": f"Unexpected error: {e}"},
-                "params": query_params
-            }
-        )
-        
-    
 @business_router.get("/export")
 def read_businesses_export(db: Session = Depends(get_db)):
     """Read all businesses for export."""
