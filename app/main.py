@@ -7,6 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.exceptions import RequestValidationError
 
 from app.routers.location import location_router
+from app.routers.source import source_router
 from app.routers.business import business_router
 from app.routers.serpapi import serpapi_router
 from app.routers.owens import owenscorning
@@ -21,6 +22,7 @@ def root():
     return {"message": "Welcome to the BizList API!"}
 
 app.include_router(location_router, prefix="/locations", tags=["locations"])
+app.include_router(source_router, prefix="/sources", tags=["sources"])
 app.include_router(business_router, prefix="/businesses", tags=["businesses"])
 app.include_router(serpapi_router, prefix="/serpapi", tags=["serpapi"])
 app.include_router(owenscorning, prefix="/scrape/owenscorning", tags=["scraper", "owenscorning"])

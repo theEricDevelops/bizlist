@@ -9,3 +9,6 @@ class APIResponse(BaseModel):
     
 class BusinessResponse(APIResponse):
     data: Optional[Dict[str, Any]] = Field({}, description="Data returned by the API, if any")
+
+class SourceResponse(APIResponse):
+    data: Optional[Dict[str, Any]] = Field({}, description="List of sources returned by the API")

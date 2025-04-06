@@ -5,7 +5,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy import select
 from typing import List, Optional
 from app.models.contact import Business
-from app.schemas.contact import BusinessSchema, BusinessSchemaRead
+from app.schemas.contact import BusinessSchema, BusinessSchemaRead, BusinessSchemaCreate
 from app.services.logger import Logger
 from app.services.formatter import Formatter
 from app.services.exporter import Exporter
@@ -43,9 +43,8 @@ class BusinessService:
         log.info(f"Updated business: {business.name} (ID: {business.id})")
         return business
 
-    def add(self, db: Session, company: SourceData):
-        source = db.execute(select(Source).where(Source.id == company.source_id)).scalar_one_or_none()
-        data = company.data
+    def add(self, db: Session, data: BusinessSchemaCreate, source: SourceData):
+        source = db.execute(select(Source).where(Source.id == data.source_id)).scalar_one_or_none()
         name = str(data.get("name")).capitalize()
         industry = str(data.get("industry")).capitalize() or ""
         email = format.email(data.get("email")) or ""
@@ -65,7 +64,7 @@ class BusinessService:
             db.refresh(updated_business)
             existing_business_source = db.query(BusinessSource).filter(
                 BusinessSource.business_id == existing_business.id,
-                BusinessSource.source_id == company.source_id
+                BusinessSource.source_id == data.source_id
             ).first()
             if not existing_business_source and source:
                 business_source = BusinessSource(business_id=existing_business.id, source_id=source.id)

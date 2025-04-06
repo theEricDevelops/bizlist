@@ -1,13 +1,11 @@
 from urllib.parse import unquote_plus
-from uuid import UUID
 
 from fastapi import APIRouter, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi import Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import List, Optional, Literal, Dict, Any
-from pydantic import BaseModel, HttpUrl, EmailStr
+from typing import Dict, Any
 from fastapi import Query
 
 from app.core.database import get_db
@@ -18,41 +16,53 @@ from app.services.business import BusinessService
 
 from app.models.contact import Business
 from app.schemas.core import APIResponse, BusinessResponse
-from app.schemas.contact import BusinessSchema, BusinessSchemaRead
+from app.schemas.contact import BusinessSchema, BusinessSchemaCreate, BusinessSchemaRead
 
 log = Logger('router-business', log_level='DEBUG')
 
 business_router = APIRouter()
 
-@business_router.post("/", response_model=BusinessSchema)
-def create_business(business: BusinessSchema, db: Session = Depends(get_db)):
+@business_router.post("")
+async def create_business(business: BusinessSchemaCreate, db: Session = Depends(get_db)):
     """Create a new business."""
     try:
-        db_business = Business(**business.model_dump(exclude={"id", "sources", "contacts"}))
-        db.add(db_business)
-        db.commit()
-        db.refresh(db_business)
-        return db_business
+        bus_service = BusinessService()
+        code, status, error_list, parameters, result = bus_service.add(db=db, data=business.model_dump())
+
+        return JSONResponse(
+            status_code=code,
+            content={
+                "status": status,
+                "code": code,
+                "errors": error_list,
+                "params": parameters,
+                "data": result
+            }
+        )
     except SQLAlchemyError as e:
-        db.rollback()
         log.error(f"Error creating business: {e}")
-        response = APIResponse(
-            code=500,
-            status="error",
-            errors={"message": f"Database error: {e}"},
-            params={}
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": 500,
+                "errors": [str(e)],
+                "params": business.model_dump(),
+                "data": None
+            }
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())
     except Exception as e:
-        db.rollback()
         log.error(f"Unexpected error: {e}")
-        response = APIResponse(
-            code=500,
-            status="error",
-            errors={"message": f"Unexpected error: {e}"},
-            params={}
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": 500,
+                "errors": [str(e)],
+                "params": business.model_dump(),
+                "data": None
+            }
         )
-        raise HTTPException(status_code=500, detail=response.model_dump())
 
 @business_router.get("", response_model=BusinessResponse)
 def read_businesses(request: Request, db: Session = Depends(get_db)):
