@@ -64,6 +64,53 @@ def get_sources(
             }
         )
 
+@source_router.get("/{source_name}", response_model=SourceResponse)
+def get_source(
+    source_name: str,
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100,
+):
+    """Get a specific source by name."""
+    try:
+        sources = SourceService()
+        status, code, error_list, parameters, results = sources.get(db=db, skip=skip, limit=limit, search=source_name)
+        log.debug(f"Code: {code}, Status: {status}, Errors: {error_list}, Parameters: {parameters}, Results: {results}")
+
+        response = SourceResponse(
+            status=status,
+            code=code,
+            errors=error_list,
+            params=parameters,
+            data=results
+        )
+
+        return JSONResponse(status_code=code, content=response.model_dump())
+    except SQLAlchemyError as e:
+        log.error(f"Error getting source by name: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": 500,
+                "errors": [str(e)],
+                "params": {},
+                "data": None
+            }
+        )
+    except Exception as e:
+        log.error(f"Unexpected error: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "code": 500,
+                "errors": [str(e)],
+                "params": {},
+                "data": None
+            }
+        )
+
 @source_router.post("")
 def add_source(
     source: SourceSchemaRef,
@@ -108,3 +155,4 @@ def add_source(
                 "data": None
             }
         )
+    

@@ -16,6 +16,7 @@ class SourceService:
         """Get sources from the database with optional pagination and search."""
         log.info(f"Getting sources with pagination: skip={skip}, limit={limit}, search={search}")
         errors = []
+        status = 'success'
         code = 200
         params = {
             "skip": skip,
@@ -59,6 +60,7 @@ class SourceService:
                 log.warning("No sources found.")
                 errors.append("No sources found.")
                 code = 404
+                status = 'error'
 
             sources = []
             for source in source_list:
@@ -72,7 +74,7 @@ class SourceService:
             log.debug(f"Final data: {data}")
 
             return (
-                'success', 
+                status, 
                 code, 
                 errors, 
                 params, 
