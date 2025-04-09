@@ -1,4 +1,5 @@
 from uuid import UUID
+from datetime import datetime
 from app.core.config import config
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
@@ -9,19 +10,44 @@ from app.schemas.contact import BusinessSchema, BusinessSchemaRead, BusinessSche
 from app.services.logger import Logger
 from app.services.formatter import Formatter
 from app.services.exporter import Exporter
+from app.services.source import SourceService
 from app.models.source import Source
 from app.models.joins import BusinessSource
 from app.schemas.source import SourceData
+from app.schemas.core import APIResponse, BusinessResponse
 
 from urllib.parse import unquote_plus
 
 log = Logger('service-business')
 format = Formatter()
-
+sources = SourceService()
 
 class BusinessService:
     def __init__(self):
         pass
+
+    def _serialize_business(self, business: Business) -> dict:
+        """Serialize a Business object to a dictionary."""
+        business_dict = business.__dict__.copy()
+        business_dict.pop('_sa_instance_state', None)
+
+        keys_to_process = list(business_dict.keys())
+
+        processed_dict = {}
+        for key in keys_to_process:
+            value = business_dict[key]
+            
+            if value == '' or value is None:
+                continue
+
+            if isinstance(value, UUID):
+                processed_dict[key] = str(value)
+            elif isinstance(value, datetime):
+                processed_dict[key] = value.isoformat(' ', 'seconds')
+            else:
+                processed_dict[key] = value
+
+        return processed_dict
 
     def update(self, db: Session, business: Business, data: BusinessSchema) -> Business:
         business.name = data.name
@@ -43,43 +69,108 @@ class BusinessService:
         log.info(f"Updated business: {business.name} (ID: {business.id})")
         return business
 
-    def add(self, db: Session, data: BusinessSchemaCreate, source: SourceData):
-        source = db.execute(select(Source).where(Source.id == data.source_id)).scalar_one_or_none()
-        name = str(data.get("name")).capitalize()
-        industry = str(data.get("industry")).capitalize() or ""
-        email = format.email(data.get("email")) or ""
-        phone_number = format.phone(data.get("phone")) or ""
-        address, address2, city, state, zip = format.address_parts(data.get("address"))
-        zip = format.zip(zip) or ""
-        website = format.website(data.get("website")) or ""
-        business = Business(
-            name=name, industry=industry, email=email, phone=phone_number,
-            address=address, address2=address2, city=city, state=state, zip=zip,
-            website=website, notes=str(data)
-        )
-        existing_business = db.query(Business).filter(Business.name == name).first()
-        if existing_business:
-            log.info(f"Found existing business: {name} (ID: {existing_business.id})")
-            updated_business = self.update(db, existing_business, business)
-            db.refresh(updated_business)
-            existing_business_source = db.query(BusinessSource).filter(
-                BusinessSource.business_id == existing_business.id,
-                BusinessSource.source_id == data.source_id
-            ).first()
-            if not existing_business_source and source:
-                business_source = BusinessSource(business_id=existing_business.id, source_id=source.id)
-                db.add(business_source)
-            db.commit()
-            return {"existing": True, "business": updated_business}
-        else:
-            log.debug(f"Adding new business: {business}")    
+    def add(self, db: Session, data: BusinessSchemaCreate) -> BusinessSchema:
+        """Add a new business to the database."""
+        log.info(f"Adding new business: {data}")
+        errors = []
+        status = 'success'
+        code = 201
+        params = data
+        result_data = {}
+
+        try:
+            name = format.name(str(params['name']))
+            existing_business: Business = db.query(Business).filter(Business.name == name).first()
+            log.debug(f"Existing business: {existing_business}")
+
+            if existing_business:
+                log.warning(f"Business with name '{name}' already exists.")
+                errors.append(f"Business with name '{name}' already exists.")
+                return 'error', 409, errors, {"name": name}, self._serialize_business(existing_business)
+
+            #source = db.execute(select(Source).where(Source.id == data.source_id)).scalar_one_or_none()
+            _, _, _, _, source = sources.get(db, search=data['source'])
+            log.debug(f"Source: {source}")
+            
+            if not source or 'sources' not in source or not source['sources']:
+                log.error(f"Invalid source structure: {source}")
+                errors.append("Invalid source structure.")
+                return 'error', 500, errors, params, result_data
+            
+            source_id = source['sources'][0]['id']
+            log.debug(f"Source ID: {source_id} (type: {type(source_id)})")
+            
+            log.debug(f"Name: {name}")
+            if data.get("industry"):
+                industry = format.name(str(data.get("industry"))) or ""
+                log.debug(f"Industry: {industry}")
+            else: 
+                industry = ""
+            if data.get("email"):
+                email = format.email(data.get("email")) or ""
+                log.debug(f"Email: {email}")
+            else:
+                email = ""
+            if data.get("phone"):
+                phone_number = format.phone(data.get("phone")) or ""
+                log.debug(f"Phone: {phone_number}")
+            else:
+                phone_number = ""
+            if data.get("address"):
+                address, address2, city, state, zip = format.address_parts(data.get("address"))
+                zip = format.zip(zip) or ""
+                log.debug(f"Address: {address}, Address2: {address2}, City: {city}, State: {state}, Zip: {zip}")
+            else:
+                address = address2 = city = state = zip = ""
+            if data.get("website"):
+                website = format.website(data.get("website")) or ""
+                log.debug(f"Website: {website}")
+            else:
+                website = ""
+            
+            business = Business(
+                name=name, industry=industry, email=email, phone=phone_number,
+                address=address, address2=address2, city=city, state=state, zip=zip,
+                website=website, notes=str(data)
+            )
+            log.debug(f"Business object: {business}")
             db.add(business)
             db.flush()
-            if source:
-                business_source = BusinessSource(business_id=business.id, source_id=source.id)
-                db.add(business_source)
+            db.refresh(business)
+            log.info(f"Added new business: {business.name} (ID: {business.id})")
+            
+            # Create a new BusinessSource object and associate it with the business
+            business_source = BusinessSource(business_id=business.id, source_id=source_id)
+            db.add(business_source)
             db.commit()
-            return {"existing": False, "business": business}
+            db.refresh(business)
+            log.info(f"Added source to business: {business.name} (ID: {business.id})")
+
+            business_dict = {
+                "id": str(business.id) if business.id else None,
+                "name": business.name,
+                "phone": business.phone,
+                "email": business.email,
+                "address": business.address,
+                "address2": business.address2,
+                "city": business.city,
+                "state": business.state,
+                "zip": business.zip,
+                "website": business.website,
+                "industry": business.industry,
+                "source": source['sources'][0]['name'] if source['sources'] else None,
+                "notes": business.notes,
+            }
+
+            return 'success', 201, errors, data, business_dict
+        except SQLAlchemyError as e:
+            log.error(f"Error adding business: {e}")
+            errors.append(f"Error adding business: {e}")
+            return 'error', 500, [str(e)], params, result_data
+        except Exception as e:
+            log.error(f"Unexpected error: {e}")
+            errors.append(f"Unexpected error: {e}")
+            return 'error', 500, [str(e)], params, result_data
         
     def get(self, db: Session, params: dict = None) -> Optional[List[Business]]:
         errors = []
@@ -203,6 +294,32 @@ class BusinessService:
         except Exception as e:
             log.error(f"Unexpected error: {e}")
             return 500, 'error', [f"Unexpected error: {e}"], original_params, None
+    
+    def remove(self, db: Session, business: Business) -> tuple[str, int, list, dict, dict]:
+        """Remove a business from the database."""
+        log.info(f"Removing business: {business.name} (ID: {business.id})")
+        errors = []
+        code = 200
+        params = {
+            "business": business.model_dump()
+        }
+        data = {
+            "business": None
+        }
+
+        try:
+            db.delete(business)
+            db.commit()
+            log.info(f"Removed business: {business.name} (ID: {business.id})")
+            return 'success', code, errors, params, data
+        except SQLAlchemyError as e:
+            log.error(f"Error removing business: {e}")
+            errors.append(f"Error removing business: {e}")
+            return 'error', 500, [str(e)], params, data
+        except Exception as e:
+            log.error(f"Unexpected error: {e}")
+            errors.append(f"Unexpected error: {e}")
+            return 'error', 500, [str(e)], params, data
     
     def export_to_csv(data: List[Business], filename: str = None) -> str:
         export = Exporter()

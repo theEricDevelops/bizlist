@@ -64,6 +64,7 @@ class ContactSchemaBase(BaseModel):
 
 class BusinessSchemaCreate(BusinessSchemaBase):
     id: Optional[uuid.UUID] = Field(default=uuid.uuid4())
+    source: str = Field(default="Unknown", description="Source of the business information.")
 
     model_config = ConfigDict(
         from_attributes=True,

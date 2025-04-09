@@ -1,12 +1,12 @@
 from urllib.parse import unquote_plus
+from typing import Dict, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi import Depends, HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from typing import Dict, Any
-from fastapi import Query
 
 from app.core.database import get_db
 
@@ -16,18 +16,31 @@ from app.services.business import BusinessService
 
 from app.models.contact import Business
 from app.schemas.core import APIResponse, BusinessResponse
-from app.schemas.contact import BusinessSchema, BusinessSchemaCreate, BusinessSchemaRead
+from app.schemas.contact import BusinessSchema, BusinessSchemaCreate
 
 log = Logger('router-business', log_level='DEBUG')
 
 business_router = APIRouter()
 
 @business_router.post("")
-async def create_business(business: BusinessSchemaCreate, db: Session = Depends(get_db)):
-    """Create a new business."""
+async def add_business(business: BusinessSchemaCreate, db: Session = Depends(get_db)):
+    """Add a new business."""
     try:
+        code = 200
+        status = "success"
+        error_list = []
+        parameters = {}
+        result = {}
+
         bus_service = BusinessService()
-        code, status, error_list, parameters, result = bus_service.add(db=db, data=business.model_dump())
+        status, code, error_list, parameters, result = bus_service.add(db=db, data=business.model_dump())
+        log.debug(f"Business creation response: {code}, {status}, {error_list}, {parameters}, {result}")
+
+
+        if parameters and isinstance(parameters, dict) and code == 200:
+            for key, value in parameters.items():
+                if isinstance(value, UUID):
+                    parameters[key] = str(value)
 
         return JSONResponse(
             status_code=code,
@@ -41,25 +54,27 @@ async def create_business(business: BusinessSchemaCreate, db: Session = Depends(
         )
     except SQLAlchemyError as e:
         log.error(f"Error creating business: {e}")
+        params = {k: str(v) if isinstance(v, UUID) else v for k, v in business.model_dump().items()}
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
                 "code": 500,
                 "errors": [str(e)],
-                "params": business.model_dump(),
+                "params": params,
                 "data": None
             }
         )
     except Exception as e:
         log.error(f"Unexpected error: {e}")
+        params = {k: str(v) if isinstance(v, UUID) else v for k, v in business.model_dump().items()}
         return JSONResponse(
             status_code=500,
             content={
                 "status": "error",
                 "code": 500,
                 "errors": [str(e)],
-                "params": business.model_dump(),
+                "params": params,
                 "data": None
             }
         )
@@ -81,6 +96,69 @@ def read_businesses(request: Request, db: Session = Depends(get_db)):
             "data": results
         }
     )
+
+@business_router.get("/{name}")
+def get_business(name: str, db: Session = Depends(get_db)):
+    """Get a business by name."""
+    try:
+        business = db.query(Business).filter(Business.name == name).first()
+        if business is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+        return business
+    except SQLAlchemyError as e:
+        log.error(f"Error reading business: {e}")
+        raise HTTPException(status_code=500, detail=f"Database error: {e}")
+    
+@business_router.delete("/{id_or_name}")
+def delete_business(id_or_name: str, db: Session = Depends(get_db)):
+    """Delete a business by ID or name."""
+    business_service = BusinessService()
+    log.info(f"Delete request with path parameter: {id_or_name}")
+
+    # Check if the input is a UUID (ID) or a string (name)
+    if len(id_or_name) == 36 and id_or_name.count('-') == 4:
+        # It's a UUID
+        id = UUID(id_or_name)
+        name = None
+    else:
+        # It's a name
+        id = None
+        name = id_or_name
+
+    try:
+        if id:
+            business = db.query(Business).filter(Business.id == id).first()
+        if name:
+            business = db.query(Business).filter(Business.name == name).first()
+            id = business.id if business else None
+        
+        if business is None:
+            raise HTTPException(status_code=404, detail="Business not found")
+
+        from app.models.joins import BusinessSource
+        db.query(BusinessSource).filter(BusinessSource.business_id == id).delete()
+        
+        db.delete(business)
+        db.commit()
+
+        return JSONResponse(
+            status_code=204, 
+            content={
+                "status": "success",
+                "code": 204,
+                "errors": [],
+                "params": {id_or_name},
+                "data": {}
+            }
+        )
+    except SQLAlchemyError as e:
+        log.error(f"Error deleting business: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error = {e}")
+    except Exception as e:
+        log.error(f"Unexpected error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Unexpected error = {e}")
 
         
 @business_router.get("/export")

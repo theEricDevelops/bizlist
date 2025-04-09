@@ -6,7 +6,7 @@ import uuid
 from urllib.parse import unquote_plus
 from app.services.logger import Logger
 
-log = Logger('service-source')
+log = Logger('service-source', log_level='INFO')
 
 class SourceService:
     def __init__(self):
